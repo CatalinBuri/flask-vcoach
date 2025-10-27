@@ -15,8 +15,19 @@ load_dotenv()
 
 # 1. INIȚIALIZARE APLICAȚIE FLASK ȘI CORS
 app = Flask(__name__)
-# Permite accesul CORS pentru dezvoltare (ex: http://localhost)
-CORS(app) 
+
+# Configurare CORS pentru a permite domenii specifice.
+# Permitem ambele URL-uri pentru a acoperi dezvoltarea și producția.
+CORS(
+    app, 
+    resources={r"/*": {"origins": [
+        "https://www.pixelplayground3d.ro", 
+        "https://pixelplayground3d.ro", 
+        "http://localhost", 
+        "http://127.0.0.1:5000"
+    ]}},
+    supports_credentials=True
+) 
 
 # Configurează clientul Gemini.
 API_KEY = os.environ.get("GEMINI_API_KEY")
@@ -297,3 +308,4 @@ def generate_final_report():
 if __name__ == '__main__':
       print("Server Flask running directly for debug")
       app.run(host='0.0.0.0', port=5000)
+
