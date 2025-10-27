@@ -245,41 +245,24 @@ def generate_beginner_faq():
 def analyze_faq_answers():
     if not gemini_client:
         return jsonify({"error": "Gemini nu este inițializat"}), 500
-
     try:
         data = request.get_json()
-        print("📩 Data primită la analyze-faq-answers:", data)
-
-        # Verificăm existența și tipul
         faq_data = data.get("faq_data")
-        if not faq_data or not isinstance(faq_data, list) or len(faq_data) == 0:
-            return jsonify({"error": "faq_data obligatoriu și trebuie să fie o listă negoală"}), 400
+        if not faq_data:
+            return jsonify({"error": "faq_data obligatoriu"}), 400
 
-        # Luăm primul element
         item = faq_data[0]
-        question = item.get("question", "")
-        explanation = item.get("explanation", "")
-        user_answer = item.get("user_answer", "")
-
-        if not question or not user_answer:
-            return jsonify({"error": "Fiecare item trebuie să aibă cel puțin question și user_answer"}), 400
-
-        # Prompt pentru Gemini
         prompt = f"""
-        Evaluează răspunsul utilizatorului la o întrebare FAQ.
-        Întrebare: "{question}"
-        Explicația intenției recrutorului: "{explanation}"
-        Răspuns candidat: "{user_answer}"
-
-        Răspunsul strict JSON cu evaluare, exemplu:
+        Evaluează răspunsul utilizatorului: "{item.get('user_answer','')}"
+        La întrebarea: "{item.get('question','')}"
+        Explicația intenției recrutorului: "{item.get('explanation','')}"
+        Răspunsul trebuie să fie strict JSON cu evaluare de tip:
         {{
-            "evaluation": {{
-                "feedback": "...",
-                "nota_finala": 8,
-                "claritate": 9,
-                "relevanta": 7,
-                "structura": 8
-            }}
+            "feedback": "...",
+            "nota_finala": 8,
+            "claritate": 8,
+            "relevanta": 8,
+            "structura": 8
         }}
         """
 
@@ -288,11 +271,15 @@ def analyze_faq_answers():
             contents=prompt
         )
 
-        # Parsăm JSON-ul
+        # Extragem JSON-ul
         ai_data = safe_json_extract(response.text)
 
-        # Trimitem răspunsul către frontend
-        return jsonify(ai_data), 200
+        # Returnăm într-un format compatibil cu simulator.js
+        return jsonify({
+            "analysis_results": [
+                {"evaluation": ai_data}  # aici frontend-ul poate folosi [0].evaluation
+            ]
+        }), 200
 
     except Exception as e:
         traceback.print_exc()
@@ -400,6 +387,7 @@ def generate_linkedin_summary():
 # -----------------------
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
 
 
 
