@@ -26,7 +26,7 @@ except Exception as e:
 # Inițializare Flask + CORS
 # ==========================
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "https://www.pixelplayground3d.ro"}}
 
 # ==========================
 # Funcții auxiliare
@@ -251,3 +251,4 @@ def generate_questions():
 # ==========================
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
