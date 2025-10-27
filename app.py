@@ -87,18 +87,21 @@ def generate_questions():
 # -----------------------
 # ENDPOINT: /analyze-answer
 # -----------------------
+# app.py (RUTA /analyze-answer, îmbunătățită)
+
 @app.route("/analyze-answer", methods=["POST"])
 def analyze_answer():
     if not gemini_client:
         return jsonify({"error": "Clientul Gemini nu este inițializat."}), 500
     try:
+        # ... (logica de preluare date și prompt rămâne aceeași) ...
         data = request.get_json()
         question = data.get("question")
         user_answer = data.get("user_answer")
         previous_history = data.get("history", [])
 
         if not question or not user_answer:
-            return jsonify({"error": "Întrebarea și răspunsul sunt obligatorii."}), 400
+             return jsonify({"error": "Întrebarea și răspunsul sunt obligatorii."}), 400
 
         history_text = json.dumps(previous_history, indent=2) if previous_history else ""
         prompt = f"""
@@ -107,11 +110,11 @@ def analyze_answer():
         Răspuns candidat: "{user_answer}"
         Istoric: {history_text}
 
-        Răspunsul trebuie să fie JSON cu:
+        Răspunsul trebuie să fie strict în format JSON, fără text suplimentar în afara obiectului JSON:
         {{
             "current_evaluation": {{
-                "feedback": "...",
-                "nota_finala": 8,
+                "feedback": "Feedback detaliat în format Markdown.",
+                "nota_finala": 8, // Scorul final între 1 și 10
                 "claritate": 9,
                 "relevanta": 7,
                 "structura": 8
@@ -122,10 +125,24 @@ def analyze_answer():
             model='gemini-2.5-flash', contents=prompt
         )
         ai_data = safe_json_extract(response.text)
+
+        # 🚀 ADĂUGARE CRITICĂ: VERIFICARE STRUCTURĂ
+        if (not ai_data or 
+            'current_evaluation' not in ai_data or 
+            'feedback' not in ai_data['current_evaluation']):
+            
+             # Dacă lipsește câmpul 'feedback', aruncăm o eroare internă
+             raise ValueError("Răspunsul AI are o structură JSON neconformă (lipsește 'current_evaluation' sau 'feedback').")
+
         return jsonify(ai_data), 200
+        
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": "Analiza răspunsului eșuată", "details": str(e)}), 500
+        # Returnăm un JSON de eroare, nu un răspuns parțial
+        return jsonify({
+            "error": "Analiza răspunsului eșuată din cauza unei erori interne la AI.", 
+            "details": str(e)
+        }), 500
 
 # -----------------------
 # ENDPOINT: /generate-report
@@ -387,6 +404,7 @@ def generate_linkedin_summary():
 # -----------------------
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
 
 
 
