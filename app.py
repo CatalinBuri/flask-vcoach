@@ -1,78 +1,10 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+import json
 
 app = Flask(__name__)
-# Permite CORS doar pentru domeniul tău
-CORS(app, resources={r"/*": {"origins": "https://www.pixelplayground3d.ro"}}, supports_credentials=True)
-
-# -----------------------
-# Endpoint: /generate-cover-letter
-# -----------------------
-@app.route("/generate-cover-letter", methods=["POST"])
-def generate_cover_letter():
-    try:
-        data = request.get_json()
-        cv_text = data.get("cv_text")
-        job_text = data.get("job_text")
-
-        if not cv_text or not job_text:
-            return jsonify({"error": "CV și Job Description sunt obligatorii"}), 400
-
-        # Dummy cover letter
-        cover_letter = f"Acesta este un exemplu de scrisoare de intenție pentru jobul tău:\n\n{job_text}\n\nCV:\n{cv_text}"
-
-        return jsonify({"cover_letter": cover_letter})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# -----------------------
-# Endpoint: /optimize-linkedin-profile
-# -----------------------
-@app.route("/optimize-linkedin-profile", methods=["POST"])
-def optimize_linkedin_profile():
-    try:
-        data = request.get_json()
-        cv_text = data.get("cv_text")
-        domain = data.get("domain")
-
-        if not cv_text or not domain:
-            return jsonify({"error": "CV și domeniu sunt obligatorii"}), 400
-
-        # Dummy headlines și about section
-        headlines = [
-            f"{domain} Specialist cu experiență",
-            f"Profesional în {domain} și AI",
-            f"Expert {domain} | Dezvoltator CV"
-        ]
-        about_section = f"Profil optimizat pentru domeniul {domain} bazat pe CV-ul tău."
-
-        return jsonify({"headlines": headlines, "about_section": about_section})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# -----------------------
-# Endpoint: /generate-job-queries
-# -----------------------
-@app.route("/generate-job-queries", methods=["POST"])
-def generate_job_queries():
-    try:
-        data = request.get_json()
-        cv_text = data.get("cv_text")
-
-        if not cv_text:
-            return jsonify({"error": "CV este obligatoriu"}), 400
-
-        # Dummy queries
-        queries = [
-            "Software Developer Python",
-            "AI Engineer",
-            "Data Scientist Junior",
-            "Backend Developer Remote"
-        ]
-
-        return jsonify({"queries": queries})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+# Permite acces de oriunde (poți restrânge la domeniul tău live)
+CORS(app)
 
 # -----------------------
 # Endpoint: /process-text
@@ -82,13 +14,10 @@ def process_text():
     try:
         data = request.get_json()
         text = data.get("text")
-
         if not text:
             return jsonify({"error": "Text obligatoriu"}), 400
 
-        # Dummy processed text
-        processed_text = f"Sinteza Jobului: {text[:150]}..."  # primele 150 caractere
-
+        processed_text = f"Sinteza Jobului: {text[:150]}..."
         return jsonify({"processed_text": processed_text})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -102,11 +31,9 @@ def generate_questions():
         data = request.get_json()
         processed_text = data.get("processed_text")
         cv_text = data.get("cv_text")
-
         if not processed_text or not cv_text:
             return jsonify({"error": "Text procesat și CV obligatorii"}), 400
 
-        # Dummy întrebări
         questions = [
             "Povestește-ne despre experiența ta relevantă.",
             "Care sunt punctele tale forte?",
@@ -114,7 +41,6 @@ def generate_questions():
             "Cum abordezi o problemă complexă?",
             "Unde te vezi peste 5 ani?"
         ]
-
         return jsonify({"questions": questions})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -136,7 +62,6 @@ def evaluate_answer():
         if not question or not answer or not cv_text:
             return jsonify({"error": "question, answer și cv_text sunt obligatorii"}), 400
 
-        # Dummy evaluare
         current_evaluation = {
             "feedback": "Răspuns corect, dar poate fi mai concis.",
             "nota_finala": 8,
@@ -169,15 +94,14 @@ def generate_report():
         if not summary or not history or not cv_text:
             return jsonify({"error": "summary, history și cv_text sunt obligatorii"}), 400
 
-        # Dummy raport
-        report_text = f"Raport final:\nSinteză job: {summary}\nIstoric interviu: {history[:300]}...\nCV: {cv_text[:150]}..."
+        # Convertim history la obiect Python dacă e string
+        if isinstance(history, str):
+            history = json.loads(history)
 
+        report_text = f"Raport final:\nSinteză job: {summary}\nIstoric interviu: {json.dumps(history)[:300]}...\nCV: {cv_text[:150]}..."
         return jsonify({"report_text": report_text})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# -----------------------
-# RUN SERVER
-# -----------------------
 if __name__ == "__main__":
     app.run(debug=True)
