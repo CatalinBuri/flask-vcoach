@@ -243,14 +243,16 @@ def generate_beginner_faq():
 # -----------------------
 @app.route("/analyze-faq-answers", methods=["POST"])
 def analyze_faq_answers():
-    if not gemini_client:
-        return jsonify({"error": "Gemini nu este inițializat"}), 500
     try:
         data = request.get_json()
+        print("Data primită la analyze-faq-answers:", data)
+
         faq_data = data.get("faq_data")
         if not faq_data:
             return jsonify({"error": "faq_data obligatoriu"}), 400
+
         item = faq_data[0]
+        print("Analizăm item:", item)
         prompt = f"""
         Evaluează răspunsul utilizatorului: {item.get('user_answer','')}
         La întrebarea: {item.get('question','')}
@@ -263,6 +265,7 @@ def analyze_faq_answers():
         ai_data = safe_json_extract(response.text)
         return jsonify(ai_data), 200
     except Exception as e:
+        import traceback
         traceback.print_exc()
         return jsonify({"error": "Analiză FAQ eșuată", "details": str(e)}), 500
 
@@ -368,6 +371,7 @@ def generate_linkedin_summary():
 # -----------------------
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
 
 
 
