@@ -180,22 +180,21 @@ def process_text():
         # 🧠 Prompt clar pentru sinteză în română
         prompt = f"""
         Rezumă în limba română principalele responsabilități și competențe din următorul text de job description.
-        Oferă un text coerent, ușor de înțeles, fără liste cu bullet-uri.
+        Oferă un text coerent, ușor de înțeles, fără liste cu bullet-uri și fără menționarea expresiei 'bullet icon'.
 
-        Text:
+        Text job:
         {clean_text}
         """
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Ești un asistent care face rezumate clare și profesionale în limba română."},
-                {"role": "user", "content": prompt}
-            ],
-            max_tokens=400
+        # ✨ Generare conținut cu Gemini
+        response = gemini_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
         )
 
-        summary = response.choices[0].message.content.strip()
+        # Extragem sinteza
+        summary = response.text.strip()
+
         return jsonify({"processed_text": summary})
 
     except Exception as e:
@@ -369,5 +368,6 @@ def generate_linkedin_summary():
 # -----------------------
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
 
 
