@@ -51,6 +51,7 @@ def generate_questions():
         return jsonify({"error": "Clientul Gemini nu este inițializat."}), 500
     try:
         data = request.get_json()
+        print("📩 Data primită:", data)
         cv_text = data.get("cv_text")
         job_text = data.get("job_text")
         if not cv_text or not job_text:
@@ -342,3 +343,4 @@ def generate_linkedin_summary():
 # -----------------------
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
