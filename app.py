@@ -169,12 +169,38 @@ def generate_report():
 def process_text():
     try:
         data = request.get_json()
-        text = data.get("text")
-        if not text:
-            return jsonify({"error": "Text obligatoriu"}), 400
-        return jsonify({"processed_text": f"Sinteza: {text[:150]}..."})
+        job_text = data.get("text", "").strip()
+        if not job_text:
+            return jsonify({"error": "Job description is required."}), 400
+
+        # 🧹 Curățare text — eliminăm "bullet icon" și spațiile duble
+        clean_text = re.sub(r"(?i)\b(bullet\s*icon)\b", "", job_text)
+        clean_text = re.sub(r"\s{2,}", " ", clean_text).strip()
+
+        # 🧠 Prompt clar pentru sinteză în română
+        prompt = f"""
+        Rezumă în limba română principalele responsabilități și competențe din următorul text de job description.
+        Oferă un text coerent, ușor de înțeles, fără liste cu bullet-uri.
+
+        Text:
+        {clean_text}
+        """
+
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "Ești un asistent care face rezumate clare și profesionale în limba română."},
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=400
+        )
+
+        summary = response.choices[0].message.content.strip()
+        return jsonify({"processed_text": summary})
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        print(f"Eroare la /process-text: {str(e)}")
+        return jsonify({"error": "Eroare internă la procesarea textului."}), 500
 
 # -----------------------
 # ENDPOINT: /generate-beginner-faq
@@ -343,4 +369,5 @@ def generate_linkedin_summary():
 # -----------------------
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
 
