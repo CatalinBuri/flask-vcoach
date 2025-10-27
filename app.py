@@ -295,9 +295,5 @@ def generate_final_report():
 # --- PORNIREA SERVERULUI ---
 
 if __name__ == '__main__':
-    # ⚠️ ATENȚIE: Acesta este serverul de dezvoltare Flask (app.run), menținut la solicitarea dumneavoastră.
-    print("\n=======================================================")
-    print("SERVER FLASK PORNEȘTE CU SERVERUL DE DEZVOLTARE (app.run)")
-    print("* Rulare pe [http://127.0.0.1:5000/](http://127.0.0.1:5000/)")
-    print("=======================================================\n")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+      print("Server Flask running directly for debug")
+      app.run(host='0.0.0.0', port=5000)
