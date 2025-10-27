@@ -243,29 +243,58 @@ def generate_beginner_faq():
 # -----------------------
 @app.route("/analyze-faq-answers", methods=["POST"])
 def analyze_faq_answers():
+    if not gemini_client:
+        return jsonify({"error": "Gemini nu este inițializat"}), 500
+
     try:
         data = request.get_json()
-        print("Data primită la analyze-faq-answers:", data)
+        print("📩 Data primită la analyze-faq-answers:", data)
 
+        # Verificăm existența și tipul
         faq_data = data.get("faq_data")
-        if not faq_data:
-            return jsonify({"error": "faq_data obligatoriu"}), 400
+        if not faq_data or not isinstance(faq_data, list) or len(faq_data) == 0:
+            return jsonify({"error": "faq_data obligatoriu și trebuie să fie o listă negoală"}), 400
 
+        # Luăm primul element
         item = faq_data[0]
-        print("Analizăm item:", item)
+        question = item.get("question", "")
+        explanation = item.get("explanation", "")
+        user_answer = item.get("user_answer", "")
+
+        if not question or not user_answer:
+            return jsonify({"error": "Fiecare item trebuie să aibă cel puțin question și user_answer"}), 400
+
+        # Prompt pentru Gemini
         prompt = f"""
-        Evaluează răspunsul utilizatorului: {item.get('user_answer','')}
-        La întrebarea: {item.get('question','')}
-        Explicația intenției recrutorului: {item.get('explanation','')}
-        Răspunsul strict JSON cu evaluare.
+        Evaluează răspunsul utilizatorului la o întrebare FAQ.
+        Întrebare: "{question}"
+        Explicația intenției recrutorului: "{explanation}"
+        Răspuns candidat: "{user_answer}"
+
+        Răspunsul strict JSON cu evaluare, exemplu:
+        {{
+            "evaluation": {{
+                "feedback": "...",
+                "nota_finala": 8,
+                "claritate": 9,
+                "relevanta": 7,
+                "structura": 8
+            }}
+        }}
         """
+
         response = gemini_client.models.generate_content(
-            model='gemini-2.5-flash', contents=prompt
+            model='gemini-2.5-flash',
+            contents=prompt
         )
+
+        # Parsăm JSON-ul
         ai_data = safe_json_extract(response.text)
+
+        # Trimitem răspunsul către frontend
         return jsonify(ai_data), 200
+
     except Exception as e:
-        import traceback
         traceback.print_exc()
         return jsonify({"error": "Analiză FAQ eșuată", "details": str(e)}), 500
 
@@ -371,6 +400,7 @@ def generate_linkedin_summary():
 # -----------------------
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
 
 
 
