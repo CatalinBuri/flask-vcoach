@@ -59,9 +59,9 @@ def generate_questions():
 
         prompt = f"""
         Ești un recrutor AI specializat. Analizează CV și Job Description și generează:
-        1. O sinteză scurtă a postului.
-        2. 5 întrebări personalizate de interviu.
-        
+        1. O sinteză scurtă a postului (în română).
+        2. 5 întrebări personalizate de interviu (în română).
+        ***TOATĂ IEȘIREA TREBUIE SĂ FIE ÎN LIMBA ROMÂNĂ!***
         CV:
         {cv_text}
         
@@ -105,7 +105,7 @@ def analyze_answer():
 
         history_text = json.dumps(previous_history, indent=2) if previous_history else ""
         prompt = f"""
-        Ești un recrutor AI. Analizează răspunsul candidatului.
+        Ești un recrutor AI. Analizează răspunsul candidatului.Analiza sa fie STRICT in limba română
         Întrebare: "{question}"
         Răspuns candidat: "{user_answer}"
         Istoric: {history_text}
@@ -164,7 +164,7 @@ def generate_report():
         {history_text}
         și sinteza jobului: {job_summary}
 
-        Generează raport final strict JSON cu:
+        Generează raport final în limba română strict JSON cu:
         {{
             "overall_report_markdown": "...",
             "compatibility_score": 75
@@ -229,9 +229,9 @@ def generate_beginner_faq():
         data = request.get_json()
         cv_text = data.get("cv_text", "").strip()
         if not cv_text:
-            prompt_context = "Generează 5 întrebări frecvente pentru candidați entry-level, fără CV."
+            prompt_context = "Generează 5 întrebări frecvente pentru candidați entry-level, fără CV, în limba română."
         else:
-            prompt_context = f"Generează 5 întrebări FAQ personalizate pe baza CV-ului: {cv_text}"
+            prompt_context = f"Generează 5 întrebări FAQ personalizate pe baza CV-ului: {cv_text}, în limba română."
 
         prompt = f"""
         Ești Recrutor AI. {prompt_context}
@@ -273,7 +273,7 @@ def analyze_faq_answers():
         Evaluează răspunsul utilizatorului: "{item.get('user_answer','')}"
         La întrebarea: "{item.get('question','')}"
         Explicația intenției recrutorului: "{item.get('explanation','')}"
-        Răspunsul trebuie să fie strict JSON cu evaluare de tip:
+        Răspunsul trebuie să fie în limba română, strict JSON cu evaluare de tip:
         {{
             "feedback": "...",
             "nota_finala": 8,
@@ -352,7 +352,7 @@ def generate_cover_letter():
             return jsonify({"error": "cv_text și job_text obligatorii"}), 400
 
         prompt = f"""
-        Generează scrisoare de intenție personalizată pe baza următoarelor:
+        Generează scrisoare de intenție personalizată, direct la subiect, fără alte confirmări sau fraze introductive, pe baza următoarelor:
         CV: {cv_text}
         Job: {job_text}
         Răspuns strict JSON:
@@ -404,6 +404,7 @@ def generate_linkedin_summary():
 # -----------------------
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
 
 
 
