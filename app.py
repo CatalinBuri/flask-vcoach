@@ -15,7 +15,7 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 # --------------------------
 # Inițializare Flask
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+CORS(app, resources={r"/*": {"origins": "https://www.pixelplayground3d.ro"}}, supports_credentials=True)
 
 # --------------------------
 # Client Gemini
@@ -49,6 +49,16 @@ def safe_json_extract(text):
         except Exception as e:
             raise ValueError(f"Eroare la extragerea JSON: {e}. Text: {full_text[:500]}...")
 
+# Preflight CORS handler
+@app.before_request
+def handle_options():
+    if request.method == 'OPTIONS':
+        resp = app.make_default_options_response()
+        headers = resp.headers
+        headers['Access-Control-Allow-Origin'] = 'https://www.pixelplayground3d.ro'
+        headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        return resp
 # --------------------------
 # ROUTE: Analiza CV
 @app.route('/analyze-cv', methods=['POST', 'OPTIONS'])
@@ -299,3 +309,4 @@ def generate_report():
 if __name__ == '__main__':
     print("Server Flask pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
