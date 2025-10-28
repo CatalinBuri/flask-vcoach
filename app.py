@@ -132,12 +132,17 @@ def analyze_answer():
         """
 
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt)
+            model="gemini-2.5-flash", contents=prompt
+        )
+
         ai_data = safe_json_extract(response.text)
-        if not ai_data.get("current_evaluation"):
-            raise ValueError("Structură JSON neconformă (lipsă current_evaluation).")
+
+        # ✅ Asigurăm structura exactă așteptată de frontend
+        if "current_evaluation" not in ai_data:
+            ai_data = {"current_evaluation": ai_data}
 
         return jsonify(ai_data)
+
     except Exception as e:
         traceback.print_exc()
         return jsonify({"error": "Analiza răspunsului eșuată", "details": str(e)}), 500
@@ -363,3 +368,4 @@ def generate_job_hunt_optimization():
 # -----------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
+
