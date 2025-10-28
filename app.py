@@ -29,7 +29,30 @@ def safe_json_extract(text):
 load_dotenv()
 app = Flask(__name__)
 
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+# ✅ CONFIGURARE CORS globală (sigură pentru domeniile tale)
+CORS(app,
+     origins=[
+         "https://www.pixelplayground3d.ro",
+         "https://pixelplayground3d.ro"
+     ],
+     allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Credentials"],
+     expose_headers=["Content-Type", "Authorization"],
+     supports_credentials=True)
+
+# ✅ Handler global pentru CORS — adăugăm antetele corecte la TOATE răspunsurile
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', 'https://www.pixelplayground3d.ro')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
+
+# ✅ Răspuns standard pentru cererile OPTIONS (preflight)
+@app.route("/", methods=["OPTIONS"])
+def handle_root_preflight():
+    return jsonify({"message": "Preflight OK"}), 200
+
 
 API_KEY = os.getenv("GEMINI_API_KEY")
 if not API_KEY:
@@ -40,13 +63,14 @@ gemini_client = genai.Client(api_key=API_KEY)
 # -----------------------
 # /generate-questions
 # -----------------------
-@app.route("/generate-questions", methods=["POST"])
+@app.route("/generate-questions", methods=["POST", "OPTIONS"])
 def generate_questions():
+    if request.method == "OPTIONS":
+        return jsonify({"message": "Preflight OK"}), 200
     try:
         data = request.get_json()
         cv_text = data.get("cv_text", "").strip()
         job_text = data.get("job_text", "").strip()
-
         if not cv_text or not job_text:
             return jsonify({"error": "CV-ul și Job Description sunt obligatorii."}), 400
 
@@ -64,11 +88,8 @@ def generate_questions():
             "question_count": 5
         }}
         """
-
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+            model="gemini-2.5-flash", contents=prompt)
         ai_data = safe_json_extract(response.text)
         return jsonify(ai_data)
     except Exception as e:
@@ -78,8 +99,10 @@ def generate_questions():
 # -----------------------
 # /analyze-answer
 # -----------------------
-@app.route("/analyze-answer", methods=["POST"])
+@app.route("/analyze-answer", methods=["POST", "OPTIONS"])
 def analyze_answer():
+    if request.method == "OPTIONS":
+        return jsonify({"message": "Preflight OK"}), 200
     try:
         data = request.get_json()
         question = data.get("question")
@@ -109,11 +132,8 @@ def analyze_answer():
         """
 
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+            model="gemini-2.5-flash", contents=prompt)
         ai_data = safe_json_extract(response.text)
-
         if not ai_data.get("current_evaluation"):
             raise ValueError("Structură JSON neconformă (lipsă current_evaluation).")
 
@@ -125,13 +145,14 @@ def analyze_answer():
 # -----------------------
 # /generate-report
 # -----------------------
-@app.route("/generate-report", methods=["POST"])
+@app.route("/generate-report", methods=["POST", "OPTIONS"])
 def generate_report():
+    if request.method == "OPTIONS":
+        return jsonify({"message": "Preflight OK"}), 200
     try:
         data = request.get_json()
         job_summary = data.get("job_summary")
         history = data.get("history")
-
         if not job_summary or not history:
             return jsonify({"error": "Sinteza jobului și istoricul sunt obligatorii."}), 400
 
@@ -146,11 +167,8 @@ def generate_report():
             "compatibility_score": 75
         }}
         """
-
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+            model="gemini-2.5-flash", contents=prompt)
         ai_data = safe_json_extract(response.text)
         return jsonify(ai_data)
     except Exception as e:
@@ -160,27 +178,24 @@ def generate_report():
 # -----------------------
 # /process-text
 # -----------------------
-@app.route("/process-text", methods=["POST"])
+@app.route("/process-text", methods=["POST", "OPTIONS"])
 def process_text():
+    if request.method == "OPTIONS":
+        return jsonify({"message": "Preflight OK"}), 200
     try:
         data = request.get_json()
         job_text = data.get("text", "").strip()
         if not job_text:
             return jsonify({"error": "Job description is required."}), 400
-
         clean_text = re.sub(r"(?i)\b(bullet\s*icon)\b", "", job_text)
         clean_text = re.sub(r"\s{2,}", " ", clean_text).strip()
-
         prompt = f"""
         Rezumă în limba română principalele responsabilități și competențe din textul următor:
         {clean_text}
-        Răspuns: un text coerent și clar (fără bullet points, fără mențiuni de tip 'bullet icon').
+        Răspuns: un text coerent și clar (fără bullet points).
         """
-
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+            model="gemini-2.5-flash", contents=prompt)
         summary = response.text.strip()
         return jsonify({"processed_text": summary})
     except Exception as e:
@@ -190,31 +205,29 @@ def process_text():
 # -----------------------
 # /generate-beginner-faq
 # -----------------------
-@app.route("/generate-beginner-faq", methods=["POST"])
+@app.route("/generate-beginner-faq", methods=["POST", "OPTIONS"])
 def generate_beginner_faq():
+    if request.method == "OPTIONS":
+        return jsonify({"message": "Preflight OK"}), 200
     try:
         data = request.get_json()
         cv_text = data.get("cv_text", "").strip()
-
         prompt = f"""
         Generează 5 întrebări de tip FAQ pentru candidați (entry-level) bazate pe CV:
         {cv_text}
         Răspuns strict JSON:
         {{
             "faq": [
-                {{"question": "Întrebare 1", "explanation": "..."}},
-                {{"question": "Întrebare 2", "explanation": "..."}},
-                {{"question": "Întrebare 3", "explanation": "..."}},
-                {{"question": "Întrebare 4", "explanation": "..."}},
-                {{"question": "Întrebare 5", "explanation": "..."}}
+                {{"question": "Întrebare 1", "explanation": "..." }},
+                {{"question": "Întrebare 2", "explanation": "..." }},
+                {{"question": "Întrebare 3", "explanation": "..." }},
+                {{"question": "Întrebare 4", "explanation": "..." }},
+                {{"question": "Întrebare 5", "explanation": "..." }}
             ]
         }}
         """
-
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+            model="gemini-2.5-flash", contents=prompt)
         ai_data = safe_json_extract(response.text)
         return jsonify(ai_data)
     except Exception as e:
@@ -224,23 +237,20 @@ def generate_beginner_faq():
 # -----------------------
 # /analyze-faq-answers
 # -----------------------
-@app.route("/analyze-faq-answers", methods=["POST"])
+@app.route("/analyze-faq-answers", methods=["POST", "OPTIONS"])
 def analyze_faq_answers():
+    if request.method == "OPTIONS":
+        return jsonify({"message": "Preflight OK"}), 200
     try:
         data = request.get_json()
         faq_data = data.get("faq_data", [])
         if not faq_data:
             return jsonify({"error": "faq_data obligatoriu"}), 400
-
         item = faq_data[0]
-        question = item.get("question", "")
-        answer = item.get("user_answer", "")
-        explanation = item.get("explanation", "")
-
         prompt = f"""
-        Evaluează răspunsul candidatului: "{answer}"
-        La întrebarea: "{question}"
-        Context: "{explanation}"
+        Evaluează răspunsul candidatului: "{item.get('user_answer','')}"
+        La întrebarea: "{item.get('question','')}"
+        Context: "{item.get('explanation','')}"
         Răspuns strict JSON:
         {{
             "feedback": "...",
@@ -250,11 +260,8 @@ def analyze_faq_answers():
             "structura": 8
         }}
         """
-
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+            model="gemini-2.5-flash", contents=prompt)
         ai_data = safe_json_extract(response.text)
         return jsonify({"analysis_results": [{"evaluation": ai_data}]})
     except Exception as e:
@@ -264,18 +271,18 @@ def analyze_faq_answers():
 # -----------------------
 # /generate-cover-letter
 # -----------------------
-@app.route("/generate-cover-letter", methods=["POST"])
+@app.route("/generate-cover-letter", methods=["POST", "OPTIONS"])
 def generate_cover_letter():
+    if request.method == "OPTIONS":
+        return jsonify({"message": "Preflight OK"}), 200
     try:
         data = request.get_json()
         cv_text = data.get("cv_text", "")
         job_text = data.get("job_text", "")
-
         if not cv_text or not job_text:
             return jsonify({"error": "cv_text și job_text sunt obligatorii"}), 400
-
         prompt = f"""
-        Generează o scrisoare de intenție profesională în română, concisă și personalizată:
+        Generează o scrisoare de intenție profesională în română, concisă și personalizată, fara a include confirmari de la modelul AI:
         CV: {cv_text}
         Job: {job_text}
         Format JSON:
@@ -284,9 +291,7 @@ def generate_cover_letter():
         }}
         """
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+            model="gemini-2.5-flash", contents=prompt)
         ai_data = safe_json_extract(response.text)
         return jsonify(ai_data)
     except Exception as e:
@@ -296,14 +301,15 @@ def generate_cover_letter():
 # -----------------------
 # /generate-linkedin-summary
 # -----------------------
-@app.route("/generate-linkedin-summary", methods=["POST"])
+@app.route("/generate-linkedin-summary", methods=["POST", "OPTIONS"])
 def generate_linkedin_summary():
+    if request.method == "OPTIONS":
+        return jsonify({"message": "Preflight OK"}), 200
     try:
         data = request.get_json()
         cv_text = data.get("cv_text", "")
         if not cv_text:
             return jsonify({"error": "cv_text obligatoriu"}), 400
-
         prompt = f"""
         Creează un sumar profesional LinkedIn bazat pe următorul CV:
         {cv_text}
@@ -312,11 +318,8 @@ def generate_linkedin_summary():
             "linkedin_summary": "..."
         }}
         """
-
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+            model="gemini-2.5-flash", contents=prompt)
         ai_data = safe_json_extract(response.text)
         return jsonify(ai_data)
     except Exception as e:
@@ -326,13 +329,14 @@ def generate_linkedin_summary():
 # -----------------------
 # /generate-job-hunt-optimization
 # -----------------------
-@app.route("/generate-job-hunt-optimization", methods=["POST"])
+@app.route("/generate-job-hunt-optimization", methods=["POST", "OPTIONS"])
 def generate_job_hunt_optimization():
+    if request.method == "OPTIONS":
+        return jsonify({"message": "Preflight OK"}), 200
     try:
         data = request.get_json()
         cv_text = data.get("cv_text", "")
         job_text = data.get("job_text", "")
-
         prompt = f"""
         Analizează CV-ul și Job Description-ul și oferă sugestii concrete pentru îmbunătățirea șanselor de angajare.
         CV: {cv_text}
@@ -346,11 +350,8 @@ def generate_job_hunt_optimization():
             ]
         }}
         """
-
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt
-        )
+            model="gemini-2.5-flash", contents=prompt)
         ai_data = safe_json_extract(response.text)
         return jsonify(ai_data)
     except Exception as e:
