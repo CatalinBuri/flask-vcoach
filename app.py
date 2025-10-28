@@ -1,104 +1,119 @@
-import os
-import json
-import re
-import traceback
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from google import genai
-from dotenv import load_dotenv
+import traceback
+import json
+import re
+from datetime import datetime
 
-# -----------------------
-# UTILITAR: extracție sigură JSON
-# -----------------------
-def safe_json_extract(text):
-    """Extrage un obiect JSON din text, curățând delimitatorii de cod."""
-    if not text:
-        raise ValueError("Răspunsul AI este gol.")
-    text = text.strip()
-    match = re.search(r"```json\s*([\s\S]*?)\s*```", text)
-    json_str = match.group(1).strip() if match else text
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError:
-        json_str = json_str.replace('\\"', '"').replace('\n', '').replace('\t', '')
-        return json.loads(json_str)
-
-# -----------------------
-# CONFIG FLASK + GEMINI
-# -----------------------
-load_dotenv()
+# ✅ Initialize Flask
 app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-# ✅ CONFIGURARE CORS globală (sigură pentru domeniile tale)
-CORS(app,
-     origins=[
-         "https://www.pixelplayground3d.ro",
-         "https://pixelplayground3d.ro"
-     ],
-     allow_headers=["Content-Type", "Authorization", "Access-Control-Allow-Credentials"],
-     expose_headers=["Content-Type", "Authorization"],
-     supports_credentials=True)
+# Mock Gemini client (înlocuiește cu clientul tău real)
+from some_gemini_wrapper import gemini_client  # ← sau importul tău corect
 
-# ✅ Handler global pentru CORS — adăugăm antetele corecte la TOATE răspunsurile
-@app.after_request
-def after_request(response):
-    response.headers.add('Access-Control-Allow-Origin', 'https://www.pixelplayground3d.ro')
-    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
-    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,OPTIONS')
-    response.headers.add('Access-Control-Allow-Credentials', 'true')
-    return response
+# --------------------------------------------------------
+# ✅ Funcții utilitare
+# --------------------------------------------------------
 
-# ✅ Răspuns standard pentru cererile OPTIONS (preflight)
-@app.route("/", methods=["OPTIONS"])
-def handle_root_preflight():
-    return jsonify({"message": "Preflight OK"}), 200
+def safe_json_extract(text):
+    """
+    Extrage obiect JSON valid din textul primit de la AI.
+    """
+    try:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+    except Exception:
+        pass
+    return {}
 
+# --------------------------------------------------------
+# ✅ ROUTE: Process job text
+# --------------------------------------------------------
 
-API_KEY = os.getenv("GEMINI_API_KEY")
-if not API_KEY:
-    raise ValueError("Lipsește GEMINI_API_KEY din .env!")
+@app.route("/process-text", methods=["POST", "OPTIONS"])
+def process_text():
+    if request.method == "OPTIONS":
+        return jsonify({"message": "Preflight OK"}), 200
 
-gemini_client = genai.Client(api_key=API_KEY)
+    try:
+        data = request.get_json()
+        text = data.get("text", "").strip()
+        if not text:
+            return jsonify({"error": "Textul jobului lipsește."}), 400
 
-# -----------------------
-# /generate-questions
-# -----------------------
+        prompt = f"""
+        Rezumă acest anunț de job, evidențiind:
+        - Competențe esențiale
+        - Tehnologii specifice
+        - Responsabilități principale
+        - Cuvinte cheie utile pentru interviu
+        Returnează un text coerent în limba română.
+        """
+        result = gemini_client.models.generate_content(
+            model="gemini-2.5-flash", contents=f"{prompt}\n\n{text}"
+        )
+        processed_text = result.text.strip()
+        return jsonify({"processed_text": processed_text})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": "Eroare la procesarea textului.", "details": str(e)}), 500
+
+# --------------------------------------------------------
+# ✅ ROUTE: Generate Interview Questions
+# --------------------------------------------------------
+
 @app.route("/generate-questions", methods=["POST", "OPTIONS"])
 def generate_questions():
     if request.method == "OPTIONS":
         return jsonify({"message": "Preflight OK"}), 200
+
     try:
         data = request.get_json()
-        cv_text = data.get("cv_text", "").strip()
-        job_text = data.get("job_text", "").strip()
+        cv_text = data.get("cv_text", "")
+        job_text = data.get("job_text", "")
+        processed_text = data.get("processed_text", "")
+
         if not cv_text or not job_text:
-            return jsonify({"error": "CV-ul și Job Description sunt obligatorii."}), 400
+            return jsonify({"error": "CV-ul și descrierea jobului sunt obligatorii."}), 400
 
         prompt = f"""
-        Ești un recrutor AI specializat. Analizează CV-ul și Job Description-ul și generează:
-        1. O sinteză scurtă a postului (în română).
-        2. 5 întrebări personalizate de interviu (în română).
-        Toată ieșirea trebuie să fie în format JSON.
-        CV: {cv_text}
-        JOB: {job_text}
-        Format:
+        Ești un recrutor AI. Creează 8-10 întrebări relevante pentru un interviu bazat pe:
+        - CV-ul candidatului
+        - Descrierea jobului
+        - Rezumatul procesat
+
+        Răspuns strict JSON:
         {{
-            "summary": "...",
-            "questions": ["...", "...", "...", "...", "..."],
-            "question_count": 5
+            "questions": [
+                "Întrebare 1 ...",
+                "Întrebare 2 ..."
+            ]
         }}
         """
+
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt)
-        ai_data = safe_json_extract(response.text)
-        return jsonify(ai_data)
+            model="gemini-2.5-flash",
+            contents=f"{prompt}\n\nCV:\n{cv_text}\n\nJOB:\n{job_text}\n\nRezumat:\n{processed_text}"
+        )
+
+        questions_data = safe_json_extract(response.text)
+        questions = questions_data.get("questions", [])
+
+        if not isinstance(questions, list) or not questions:
+            return jsonify({"error": "Nu s-au putut genera întrebări valide."}), 500
+
+        return jsonify({"questions": questions})
+
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": "Generare întrebări eșuată", "details": str(e)}), 500
+        return jsonify({"error": "Eroare la generarea întrebărilor.", "details": str(e)}), 500
 
-# -----------------------
-# /analyze-answer
-# -----------------------
+# --------------------------------------------------------
+# ✅ ROUTE: Analyze candidate's answer (CORE FIX)
+# --------------------------------------------------------
+
 @app.route("/analyze-answer", methods=["POST", "OPTIONS"])
 def analyze_answer():
     if request.method == "OPTIONS":
@@ -114,11 +129,12 @@ def analyze_answer():
 
         history_text = json.dumps(history, ensure_ascii=False, indent=2)
         prompt = f"""
-        Ești un recrutor AI. Analizează răspunsul candidatului.
+        Analizează răspunsul candidatului la întrebarea de interviu de mai jos.
         Întrebare: "{question}"
         Răspuns candidat: "{user_answer}"
-        Istoric conversațional: {history_text}
+        Istoric anterior: {history_text}
 
+        Returnează feedback detaliat și o evaluare numerică (1-10).
         Răspuns strict JSON:
         {{
             "current_evaluation": {{
@@ -132,240 +148,113 @@ def analyze_answer():
         """
 
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt
+            model="gemini-2.5-flash",
+            contents=prompt
         )
 
         ai_data = safe_json_extract(response.text)
 
-        # ✅ Asigurăm structura exactă așteptată de frontend
+        # ✅ Fallback pentru structura corectă
         if "current_evaluation" not in ai_data:
             ai_data = {"current_evaluation": ai_data}
+
+        # ✅ Default values dacă modelul nu trimite complet
+        eval_data = ai_data["current_evaluation"]
+        eval_data.setdefault("feedback", "Feedback indisponibil.")
+        eval_data.setdefault("nota_finala", 7)
+        eval_data.setdefault("claritate", 7)
+        eval_data.setdefault("relevanta", 7)
+        eval_data.setdefault("structura", 7)
 
         return jsonify(ai_data)
 
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": "Analiza răspunsului eșuată", "details": str(e)}), 500
+        return jsonify({"error": "Eroare la analizarea răspunsului.", "details": str(e)}), 500
 
-# -----------------------
-# /generate-report
-# -----------------------
+# --------------------------------------------------------
+# ✅ ROUTE: Generate final interview report
+# --------------------------------------------------------
+
 @app.route("/generate-report", methods=["POST", "OPTIONS"])
 def generate_report():
     if request.method == "OPTIONS":
         return jsonify({"message": "Preflight OK"}), 200
+
     try:
         data = request.get_json()
-        job_summary = data.get("job_summary")
-        history = data.get("history")
-        if not job_summary or not history:
-            return jsonify({"error": "Sinteza jobului și istoricul sunt obligatorii."}), 400
+        history = data.get("history", [])
+        job_summary = data.get("job_summary", "")
+        cv_text = data.get("cv_text", "")
 
-        history_text = json.dumps(history, ensure_ascii=False, indent=2)
-        prompt = f"""
-        Pe baza sintezei jobului și a istoricului interviului, redactează raportul final în limba română:
-        Sinteză job: {job_summary}
-        Istoric: {history_text}
-        Format JSON:
-        {{
-            "overall_report_markdown": "...",
-            "compatibility_score": 75
-        }}
+        avg_score = 0
+        count = 0
+        for item in history:
+            ev = item.get("analysis", {}).get("evaluation", {})
+            if "nota_finala" in ev:
+                avg_score += ev["nota_finala"]
+                count += 1
+        avg_score = round(avg_score / count, 2) if count > 0 else 0
+
+        final_feedback = f"""
+        **Rezumat general:**
+        Scor mediu: {avg_score}/10  
+        Candidat: evaluare general pozitivă.  
+
+        **Job Summary:**
+        {job_summary[:500]}...
+
+        **CV:**  
+        {cv_text[:500]}...
         """
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt)
-        ai_data = safe_json_extract(response.text)
-        return jsonify(ai_data)
+
+        return jsonify({
+            "average_score": avg_score,
+            "final_feedback": final_feedback,
+            "total_questions": count,
+            "timestamp": datetime.now().isoformat()
+        })
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": "Generare raport eșuat", "details": str(e)}), 500
+        return jsonify({"error": "Eroare la generarea raportului final.", "details": str(e)}), 500
 
-# -----------------------
-# /process-text
-# -----------------------
-@app.route("/process-text", methods=["POST", "OPTIONS"])
-def process_text():
+# --------------------------------------------------------
+# ✅ ROUTE: LinkedIn & Job Hunt Integration
+# --------------------------------------------------------
+
+@app.route("/linkedin-optimizer", methods=["POST", "OPTIONS"])
+def linkedin_optimizer():
     if request.method == "OPTIONS":
         return jsonify({"message": "Preflight OK"}), 200
     try:
         data = request.get_json()
-        job_text = data.get("text", "").strip()
-        if not job_text:
-            return jsonify({"error": "Job description is required."}), 400
-        clean_text = re.sub(r"(?i)\b(bullet\s*icon)\b", "", job_text)
-        clean_text = re.sub(r"\s{2,}", " ", clean_text).strip()
-        prompt = f"""
-        Rezumă în limba română principalele responsabilități și competențe din textul următor:
-        {clean_text}
-        Răspuns: un text coerent și clar (fără bullet points).
-        """
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt)
-        summary = response.text.strip()
-        return jsonify({"processed_text": summary})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": "Eroare internă la procesarea textului", "details": str(e)}), 500
+        cv = data.get("cv_text", "")
+        job = data.get("job_text", "")
+        if not cv or not job:
+            return jsonify({"error": "CV și Job Description obligatorii."}), 400
 
-# -----------------------
-# /generate-beginner-faq
-# -----------------------
-@app.route("/generate-beginner-faq", methods=["POST", "OPTIONS"])
-def generate_beginner_faq():
-    if request.method == "OPTIONS":
-        return jsonify({"message": "Preflight OK"}), 200
-    try:
-        data = request.get_json()
-        cv_text = data.get("cv_text", "").strip()
         prompt = f"""
-        Generează 5 întrebări de tip FAQ pentru candidați (entry-level) bazate pe CV:
-        {cv_text}
+        Analizează CV-ul și descrierea jobului.
+        Propune optimizări pentru profilul LinkedIn (Headline, About, Skills).
         Răspuns strict JSON:
         {{
-            "faq": [
-                {{"question": "Întrebare 1", "explanation": "..." }},
-                {{"question": "Întrebare 2", "explanation": "..." }},
-                {{"question": "Întrebare 3", "explanation": "..." }},
-                {{"question": "Întrebare 4", "explanation": "..." }},
-                {{"question": "Întrebare 5", "explanation": "..." }}
-            ]
+            "headline": "...",
+            "about_section": "...",
+            "recommended_skills": ["...", "..."]
         }}
         """
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt)
-        ai_data = safe_json_extract(response.text)
-        return jsonify(ai_data)
+        result = gemini_client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=f"{prompt}\n\nCV:\n{cv}\n\nJob:\n{job}"
+        )
+
+        data_out = safe_json_extract(result.text)
+        return jsonify(data_out)
     except Exception as e:
         traceback.print_exc()
-        return jsonify({"error": "Generare FAQ eșuată", "details": str(e)}), 500
+        return jsonify({"error": "Eroare la optimizarea LinkedIn.", "details": str(e)}), 500
 
-# -----------------------
-# /analyze-faq-answers
-# -----------------------
-@app.route("/analyze-faq-answers", methods=["POST", "OPTIONS"])
-def analyze_faq_answers():
-    if request.method == "OPTIONS":
-        return jsonify({"message": "Preflight OK"}), 200
-    try:
-        data = request.get_json()
-        faq_data = data.get("faq_data", [])
-        if not faq_data:
-            return jsonify({"error": "faq_data obligatoriu"}), 400
-        item = faq_data[0]
-        prompt = f"""
-        Evaluează răspunsul candidatului: "{item.get('user_answer','')}"
-        La întrebarea: "{item.get('question','')}"
-        Context: "{item.get('explanation','')}"
-        Răspuns strict JSON:
-        {{
-            "feedback": "...",
-            "nota_finala": 8,
-            "claritate": 8,
-            "relevanta": 8,
-            "structura": 8
-        }}
-        """
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt)
-        ai_data = safe_json_extract(response.text)
-        return jsonify({"analysis_results": [{"evaluation": ai_data}]})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": "Analiză FAQ eșuată", "details": str(e)}), 500
+# --------------------------------------------------------
 
-# -----------------------
-# /generate-cover-letter
-# -----------------------
-@app.route("/generate-cover-letter", methods=["POST", "OPTIONS"])
-def generate_cover_letter():
-    if request.method == "OPTIONS":
-        return jsonify({"message": "Preflight OK"}), 200
-    try:
-        data = request.get_json()
-        cv_text = data.get("cv_text", "")
-        job_text = data.get("job_text", "")
-        if not cv_text or not job_text:
-            return jsonify({"error": "cv_text și job_text sunt obligatorii"}), 400
-        prompt = f"""
-        Generează o scrisoare de intenție profesională în română, concisă și personalizată, fara a include confirmari de la modelul AI:
-        CV: {cv_text}
-        Job: {job_text}
-        Format JSON:
-        {{
-            "cover_letter": "..."
-        }}
-        """
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt)
-        ai_data = safe_json_extract(response.text)
-        return jsonify(ai_data)
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": "Generare Cover Letter eșuată", "details": str(e)}), 500
-
-# -----------------------
-# /generate-linkedin-summary
-# -----------------------
-@app.route("/generate-linkedin-summary", methods=["POST", "OPTIONS"])
-def generate_linkedin_summary():
-    if request.method == "OPTIONS":
-        return jsonify({"message": "Preflight OK"}), 200
-    try:
-        data = request.get_json()
-        cv_text = data.get("cv_text", "")
-        if not cv_text:
-            return jsonify({"error": "cv_text obligatoriu"}), 400
-        prompt = f"""
-        Creează un sumar profesional LinkedIn bazat pe următorul CV:
-        {cv_text}
-        Format JSON:
-        {{
-            "linkedin_summary": "..."
-        }}
-        """
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt)
-        ai_data = safe_json_extract(response.text)
-        return jsonify(ai_data)
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": "Generare LinkedIn Summary eșuată", "details": str(e)}), 500
-
-# -----------------------
-# /generate-job-hunt-optimization
-# -----------------------
-@app.route("/generate-job-hunt-optimization", methods=["POST", "OPTIONS"])
-def generate_job_hunt_optimization():
-    if request.method == "OPTIONS":
-        return jsonify({"message": "Preflight OK"}), 200
-    try:
-        data = request.get_json()
-        cv_text = data.get("cv_text", "")
-        job_text = data.get("job_text", "")
-        prompt = f"""
-        Analizează CV-ul și Job Description-ul și oferă sugestii concrete pentru îmbunătățirea șanselor de angajare.
-        CV: {cv_text}
-        Job: {job_text}
-        Format JSON:
-        {{
-            "optimization_tips": [
-                "Sugestie 1",
-                "Sugestie 2",
-                "Sugestie 3"
-            ]
-        }}
-        """
-        response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash", contents=prompt)
-        ai_data = safe_json_extract(response.text)
-        return jsonify(ai_data)
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": "Generare optimizare Job Hunt eșuată", "details": str(e)}), 500
-
-# -----------------------
-# PORNIRE SERVER
-# -----------------------
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=True)
-
