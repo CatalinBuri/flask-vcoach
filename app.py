@@ -1,5 +1,4 @@
 # server_vcoach.py
-
 import os
 import json
 from flask import Flask, request, jsonify
@@ -15,18 +14,31 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 # --------------------------
 # Inițializare Flask
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "https://www.pixelplayground3d.ro"}}, supports_credentials=True)
+CORS(app, resources={
+    r"/*": {
+        "origins": ["https://www.pixelplayground3d.ro"],
+        "methods": ["GET", "POST", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+    }
+})
+
+# --------------------------
+# Logging minimal pentru debugging
+@app.before_request
+def log_request():
+    print(f"[{request.method}] {request.path}  |  from: {request.headers.get('Origin', 'local')}")
 
 # --------------------------
 # Client Gemini
 try:
     if not API_KEY:
-        print("EROARE: GEMINI_API_KEY lipsește!")
+        print("❌ EROARE: GEMINI_API_KEY lipsește!")
         gemini_client = None
     else:
         gemini_client = genai.Client(api_key=API_KEY)
+        print("✅ Conexiune Gemini inițializată corect.")
 except Exception as e:
-    print(f"Eroare la inițializarea Gemini: {e}")
+    print(f"❌ Eroare la inițializarea Gemini: {e}")
     gemini_client = None
 
 # --------------------------
@@ -49,23 +61,10 @@ def safe_json_extract(text):
         except Exception as e:
             raise ValueError(f"Eroare la extragerea JSON: {e}. Text: {full_text[:500]}...")
 
-# Preflight CORS handler
-@app.before_request
-def handle_options():
-    if request.method == 'OPTIONS':
-        resp = app.make_default_options_response()
-        headers = resp.headers
-        headers['Access-Control-Allow-Origin'] = 'https://www.pixelplayground3d.ro'
-        headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
-        headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
-        return resp
 # --------------------------
 # ROUTE: Analiza CV
-@app.route('/analyze-cv', methods=['POST', 'OPTIONS'])
+@app.route('/analyze-cv', methods=['POST'])
 def analyze_cv():
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200
-
     if gemini_client is None:
         return jsonify({"error": "AI indisponibil"}), 503
 
@@ -98,11 +97,8 @@ def analyze_cv():
 
 # --------------------------
 # ROUTE: Generare Job Queries
-@app.route('/generate-job-queries', methods=['POST', 'OPTIONS'])
+@app.route('/generate-job-queries', methods=['POST'])
 def generate_job_queries():
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200
-
     if gemini_client is None:
         return jsonify({"error": "AI indisponibil"}), 503
 
@@ -127,11 +123,8 @@ def generate_job_queries():
 
 # --------------------------
 # ROUTE: Generare Cover Letter
-@app.route('/generate-cover-letter', methods=['POST', 'OPTIONS'])
+@app.route('/generate-cover-letter', methods=['POST'])
 def generate_cover_letter():
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200
-
     if gemini_client is None:
         return jsonify({"error": "AI indisponibil"}), 503
 
@@ -157,11 +150,8 @@ def generate_cover_letter():
 
 # --------------------------
 # ROUTE: Optimize LinkedIn Profile
-@app.route('/optimize-linkedin-profile', methods=['POST', 'OPTIONS'])
+@app.route('/optimize-linkedin-profile', methods=['POST'])
 def optimize_linkedin_profile():
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200
-
     if gemini_client is None:
         return jsonify({"error": "AI indisponibil"}), 503
 
@@ -183,11 +173,8 @@ def optimize_linkedin_profile():
 
 # --------------------------
 # ROUTE: Generare Beginner FAQ
-@app.route('/generate-beginner-faq', methods=['POST', 'OPTIONS'])
+@app.route('/generate-beginner-faq', methods=['POST'])
 def generate_beginner_faq():
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200
-
     if gemini_client is None:
         return jsonify({"error": "AI indisponibil"}), 503
 
@@ -214,10 +201,8 @@ def generate_beginner_faq():
 
 # --------------------------
 # ROUTE: Evaluate Answer (Comparative)
-@app.route('/evaluate-answer', methods=['POST', 'OPTIONS'])
+@app.route('/evaluate-answer', methods=['POST'])
 def evaluate_answer():
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200
     if gemini_client is None:
         return jsonify({"error": "AI indisponibil"}), 503
 
@@ -257,10 +242,8 @@ def evaluate_answer():
 
 # --------------------------
 # ROUTE: Generate Final Report
-@app.route('/generate-report', methods=['POST', 'OPTIONS'])
+@app.route('/generate-report', methods=['POST'])
 def generate_report():
-    if request.method == 'OPTIONS':
-        return jsonify({}), 200
     if gemini_client is None:
         return jsonify({"error": "AI indisponibil"}), 503
 
@@ -307,6 +290,5 @@ def generate_report():
 # --------------------------
 # PORNIRE SERVER
 if __name__ == '__main__':
-    print("Server Flask pornit pe http://0.0.0.0:5000/")
+    print("🚀 Server Flask pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
-
