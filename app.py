@@ -15,7 +15,7 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 # --------------------------
 # Inițializare Flask
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}})
 
 # --------------------------
 # Logging minimal pentru debugging
@@ -389,3 +389,4 @@ if __name__ == '__main__':
     # app.run(host='0.0.0.0', port=5000, debug=True)
     # Pentru Render, de obicei se folosește un entry point gunicorn, dar lăsăm app pentru testare locală.
     pass
+
