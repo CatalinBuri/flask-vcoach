@@ -360,9 +360,70 @@ def generate_report():
     except Exception as e:
         return jsonify({"error": "Generare raport final eșuată", "details": str(e)}), 500
 
+@app.route('/coach-results-html', methods=['POST'])
+def coach_results_html():
+    if gemini_client is None:
+        return "<h3>AI indisponibil</h3>", 503
+
+    data = request.get_json()
+    history = data.get('history', [])
+
+    if not history:
+        return "<h3>Nu există răspunsuri de procesat</h3>", 400
+
+    html_content = """
+    <html lang='ro'>
+    <head>
+        <meta charset='UTF-8'>
+        <title>Coach Feedback STAR</title>
+        <style>
+            body { font-family: Arial, sans-serif; background: #f4f7f6; padding: 20px; color: #2c3e50; }
+            h1 { text-align: center; color: #2980b9; }
+            .entry { background: #fff; padding: 15px; margin: 15px 0; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.08); }
+            .question { font-weight: bold; color: #34495e; }
+            .user-answer, .star-answer { margin-top: 10px; padding: 10px; border-radius: 6px; background: #ecf0f1; white-space: pre-wrap; }
+            .star-answer { border-left: 5px solid #2ecc71; background: #e8f6ef; }
+        </style>
+    </head>
+    <body>
+        <h1>Rezultate Coach - Versiune STAR</h1>
+    """
+
+    for idx, entry in enumerate(history):
+        question = entry.get('question', 'Întrebare lipsă')
+        user_answer = entry.get('answer', 'Răspuns lipsă')
+
+        # Generare răspuns STAR prin AI
+        prompt = f"""
+        Întrebarea: {question}
+        Răspunsul utilizatorului: {user_answer}
+        Te rog să rescrii acest răspuns într-o versiune optimizată STAR (Situation, Task, Action, Result).
+        Returnează DOAR textul răspunsului optimizat.
+        """
+        try:
+            response = gemini_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt
+            )
+            star_answer = response.text.strip()
+        except Exception as e:
+            star_answer = f"Eroare la generarea STAR: {str(e)}"
+
+        html_content += f"""
+        <div class='entry'>
+            <div class='question'>Întrebarea {idx+1}: {question}</div>
+            <div class='user-answer'><strong>Răspunsul tău:</strong>\n{user_answer}</div>
+            <div class='star-answer'><strong>Răspuns STAR optimizat:</strong>\n{star_answer}</div>
+        </div>
+        """
+
+    html_content += "</body></html>"
+    return html_content, 200
+
 
 # --------------------------
 # PORNIRE SERVER
 if __name__ == '__main__':
     print("🚀 Server Flask pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
