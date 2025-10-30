@@ -295,31 +295,19 @@ def evaluate_answer():
     }}
     """
 try:
-    # Trimite promptul la Gemini cu timeout
     response = gemini_client.models.generate_content(
         model='gemini-2.5-flash',
         contents=prompt,
-        timeout=15  # secunde
+        timeout=20  # previne blocarea
     )
-
-    # Debug: log răspunsul raw
-    print("Raw Gemini response:", response.text)
-
-    # Extrage JSON în siguranță
+    print("Raw Gemini response:", response.text)  # debug
     result = safe_json_extract(response.text)
     if not result or 'current_evaluation' not in result:
         raise ValueError("JSON invalid sau lipsesc cheile așteptate")
-
     return jsonify(result), 200
-
 except Exception as e:
-    # Log detaliu eroare în consolă
     print("ERROR evaluate-answer:", e)
-    return jsonify({
-        "error": "Evaluare răspuns eșuată",
-        "details": str(e)
-    }), 500
-
+    return jsonify({"error": "Evaluare răspuns eșuată", "details": str(e)}), 500
 
 # --------------------------
 @app.route('/generate-report', methods=['POST'])
@@ -480,6 +468,7 @@ def coach_next():
 if __name__ == '__main__':
     print("🚀 Server Flask pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
