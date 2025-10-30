@@ -2,7 +2,7 @@
 import os
 import json
 from flask import Flask, request, jsonify
-from flask_cors import CORS
+from flask_cors import CORS # 1
 from google import genai
 from dotenv import load_dotenv
 
@@ -14,7 +14,7 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 # --------------------------
 # Inițializare Flask
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "https://www.pixelplayground3d.ro"}}, supports_credentials=True)
+CORS(app)
 
 # --------------------------
 # Logging minimal pentru debugging
@@ -467,6 +467,7 @@ def coach_next():
 if __name__ == '__main__':
     print("🚀 Server Flask pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
