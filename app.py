@@ -271,11 +271,11 @@ def evaluate_answer():
         return jsonify({"error": "AI indisponibil"}), 503
 
     data = request.get_json()
+    print("Received evaluate-answer data:", data)
     question = data.get('question')
     user_answer = data.get('answer')
     previous_answer = data.get('previous_answer')
     previous_evaluation = data.get('previous_evaluation')
-
     prompt = f"""
     Analizează răspunsul utilizatorului:
     Întrebare: {question}
@@ -294,20 +294,34 @@ def evaluate_answer():
       "comparative_feedback": "Feedback comparativ cu răspunsul anterior"
     }}
     """
+try:
+    # Trimite promptul la Gemini cu timeout
+    response = gemini_client.models.generate_content(
+        model='gemini-2.5-flash',
+        contents=prompt,
+        timeout=15  # secunde
+    )
 
-    try:
-        response = gemini_client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=prompt
-        )
-        result = safe_json_extract(response.text)
-        return jsonify(result), 200
-    except Exception as e:
-        return jsonify({"error": "Evaluare răspuns eșuată", "details": str(e)}), 500
+    # Debug: log răspunsul raw
+    print("Raw Gemini response:", response.text)
+
+    # Extrage JSON în siguranță
+    result = safe_json_extract(response.text)
+    if not result or 'current_evaluation' not in result:
+        raise ValueError("JSON invalid sau lipsesc cheile așteptate")
+
+    return jsonify(result), 200
+
+except Exception as e:
+    # Log detaliu eroare în consolă
+    print("ERROR evaluate-answer:", e)
+    return jsonify({
+        "error": "Evaluare răspuns eșuată",
+        "details": str(e)
+    }), 500
 
 
 # --------------------------
-# ROUTE: Generare raport final
 @app.route('/generate-report', methods=['POST'])
 def generate_report():
     if gemini_client is None:
@@ -321,12 +335,14 @@ def generate_report():
     if not faq_history:
         return jsonify({"error": "Istoricul FAQ este gol"}), 400
 
+    # Construim textul istoric pentru prompt
     history_text = ""
     for idx, entry in enumerate(faq_history):
         q = entry.get('question', 'N/A')
         a = entry.get('answer', 'N/A')
-        note = entry.get('evaluation', {}).get('nota_finala', 'N/A')
-        feedback = entry.get('evaluation', {}).get('feedback', 'N/A')
+        eval_dict = entry.get('evaluation', {})
+        note = eval_dict.get('nota_finala', 'N/A')
+        feedback = eval_dict.get('feedback', 'N/A')
         history_text += f"--- Întrebarea {idx+1} (Nota: {note}/10) ---\nQ: {q}\nA: {a}\nFeedback: {feedback}\n\n"
 
     prompt = f"""
@@ -347,12 +363,23 @@ def generate_report():
     try:
         response = gemini_client.models.generate_content(
             model='gemini-2.5-flash',
-            contents=prompt
+            contents=prompt,
+            timeout=20  # previne blocarea serverului
         )
+
+        print("Raw Gemini response:", response.text)  # Debug
         result = safe_json_extract(response.text)
+        if not result or 'summary' not in result:
+            raise ValueError("JSON invalid sau lipsesc cheile așteptate")
+
         return jsonify(result), 200
+
     except Exception as e:
-        return jsonify({"error": "Generare raport final eșuată", "details": str(e)}), 500
+        print("ERROR generate-report:", e)
+        return jsonify({
+            "error": "Generare raport final eșuată",
+            "details": str(e)
+        }), 500
 
 @app.route('/coach-results-html', methods=['POST'])
 def coach_results_html():
@@ -453,6 +480,7 @@ def coach_next():
 if __name__ == '__main__':
     print("🚀 Server Flask pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
