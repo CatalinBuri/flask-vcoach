@@ -14,13 +14,7 @@ API_KEY = os.environ.get("GEMINI_API_KEY")
 # --------------------------
 # Inițializare Flask
 app = Flask(__name__)
-CORS(app, resources={
-    r"/*": {
-        "origins": ["https://www.pixelplayground3d.ro"],
-        "methods": ["GET", "POST", "OPTIONS"],
-        "allow_headers": ["Content-Type", "Authorization"],
-    }
-})
+CORS(app, resources={r"/*": {"origins": "https://www.pixelplayground3d.ro"}}, supports_credentials=True)
 
 # --------------------------
 # Logging minimal pentru debugging
@@ -426,4 +420,5 @@ def coach_results_html():
 if __name__ == '__main__':
     print("🚀 Server Flask pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
