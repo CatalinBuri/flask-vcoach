@@ -276,6 +276,7 @@ def evaluate_answer():
     user_answer = data.get('answer')
     previous_answer = data.get('previous_answer')
     previous_evaluation = data.get('previous_evaluation')
+
     prompt = f"""
     Analizează răspunsul utilizatorului:
     Întrebare: {question}
@@ -294,20 +295,20 @@ def evaluate_answer():
       "comparative_feedback": "Feedback comparativ cu răspunsul anterior"
     }}
     """
-try:
-    response = gemini_client.models.generate_content(
-        model='gemini-2.5-flash',
-        contents=prompt,
-        timeout=20  # previne blocarea
-    )
-    print("Raw Gemini response:", response.text)  # debug
-    result = safe_json_extract(response.text)
-    if not result or 'current_evaluation' not in result:
-        raise ValueError("JSON invalid sau lipsesc cheile așteptate")
-    return jsonify(result), 200
-except Exception as e:
-    print("ERROR evaluate-answer:", e)
-    return jsonify({"error": "Evaluare răspuns eșuată", "details": str(e)}), 500
+    try:
+        response = gemini_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt,
+            timeout=20
+        )
+        print("Raw Gemini response:", response.text)
+        result = safe_json_extract(response.text)
+        if not result or 'current_evaluation' not in result:
+            raise ValueError("JSON invalid sau lipsesc cheile așteptate")
+        return jsonify(result), 200
+    except Exception as e:
+        print("ERROR evaluate-answer:", e)
+        return jsonify({"error": "Evaluare răspuns eșuată", "details": str(e)}), 500
 
 # --------------------------
 @app.route('/generate-report', methods=['POST'])
@@ -468,6 +469,7 @@ def coach_next():
 if __name__ == '__main__':
     print("🚀 Server Flask pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
