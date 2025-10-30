@@ -56,8 +56,9 @@ def safe_json_extract(text):
             raise ValueError(f"Eroare la extragerea JSON: {e}. Text: {full_text[:500]}...")
 
 def call_gemini_safe(prompt):
-    if not gemini_client:
-        return {"error": "AI indisponibil"}
+    if gemini_client is None:
+        # Returnează o eroare specifică pentru client neinițializat
+        return {"error": "Eroare de configurare server", "details": "Clientul AI nu a putut fi inițializat (API Key lipsă/invalidă)."}
     try:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
@@ -65,7 +66,8 @@ def call_gemini_safe(prompt):
         )
         return safe_json_extract(response.text)
     except Exception as e:
-        return {"error": "Eroare la AI", "details": str(e)}
+        # Eroare de API, Rețea sau altceva.
+        return {"error": "Eroare de comunicare AI", "details": str(e)}
 
 # --------------------------
 # ROUTE: Procesare descriere job
@@ -86,12 +88,15 @@ def process_text():
     try:
         result = call_gemini_safe(prompt)
         print("✅ process-text rezultat:", result)
-        return jsonify(result), (200 if "error" not in result else 500)
+        # Setează codul de stare 500 doar dacă există o eroare
+        status_code = 200 if "error" not in result else 500
+        return jsonify(result), status_code
     except Exception as e:
+        # Această eroare prinde doar eșecurile care nu sunt în call_gemini_safe (ex: erori Request.get_json)
         import traceback
         traceback.print_exc()
         print("❌ Eroare gravă în /process-text:", str(e))
-        return jsonify({"error": "Eroare internă la procesare", "details": str(e)}), 500
+        return jsonify({"error": "Eroare internă neprevăzută", "details": str(e)}), 500
 
 # --------------------------
 # ROUTE: Generare întrebări interviu
@@ -330,4 +335,5 @@ def coach_next():
 if __name__ == '__main__':
     print("🚀 Server Flask robust pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
