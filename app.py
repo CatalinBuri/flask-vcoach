@@ -413,6 +413,39 @@ def coach_results_html():
 
     html_content += "</body></html>"
     return html_content, 200
+@app.route('/coach-next', methods=['POST'])
+def coach_next():
+    if gemini_client is None:
+        return jsonify({"error": "AI indisponibil"}), 503
+
+    data = request.get_json()
+    question = data.get('question')
+    user_answer = data.get('user_answer')
+
+    if not question or not user_answer:
+        return jsonify({"error": "Întrebare și răspuns obligatorii"}), 400
+
+    prompt = f"""
+    Întrebarea: {question}
+    Răspunsul utilizatorului: {user_answer}
+    Te rog să rescrii acest răspuns într-o versiune optimizată STAR.
+    Returnează DOAR textul răspunsului optimizat.
+    """
+
+    try:
+        response = gemini_client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
+        star_answer = response.text.strip()
+    except Exception as e:
+        star_answer = f"Eroare la generarea STAR: {str(e)}"
+
+    return jsonify({
+        "question": question,
+        "user_answer": user_answer,
+        "star_answer": star_answer
+    }), 200
 
 
 # --------------------------
@@ -420,5 +453,6 @@ def coach_results_html():
 if __name__ == '__main__':
     print("🚀 Server Flask pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
