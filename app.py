@@ -110,13 +110,18 @@ def process_text():
     )
 
     try:
-        result = call_gemini_safe(prompt)
-        print("✅ process-text rezultat:", result)
-        # Setează codul de stare 500 doar dacă există o eroare
-        status_code = 200 if "error" not in result else 500
-        return jsonify(result), status_code
+        # 🎯 SCHIMBARE: Folosim call_gemini_raw pentru a obține textul brut
+        raw_result = call_gemini_raw(prompt) 
+        
+        # Verificăm dacă apelul raw a returnat o eroare (dicționar)
+        if isinstance(raw_result, dict) and "error" in raw_result:
+            return jsonify(raw_result), 500
+
+        # Returnăm textul (rezumatul) învelit în JSON cu cheia așteptată de client
+        # Presupunând că clientul (JavaScript) așteaptă cheia 'processed_text'
+        return jsonify({"processed_text": raw_result}), 200 
+    
     except Exception as e:
-        # Această eroare prinde doar eșecurile care nu sunt în call_gemini_safe (ex: erori Request.get_json)
         import traceback
         traceback.print_exc()
         print("❌ Eroare gravă în /process-text:", str(e))
@@ -359,6 +364,7 @@ def coach_next():
 if __name__ == '__main__':
     print("🚀 Server Flask robust pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
