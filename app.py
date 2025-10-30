@@ -37,37 +37,61 @@ except Exception as e:
 
 # --------------------------
 # UTILITĂȚI
+# 1. Funcția îmbunătățită pentru extracția JSON (înlocuiește vechiul safe_json_extract)
 def safe_json_extract(text):
     if not text:
-        raise ValueError("Text gol primit de la AI.")
+        raise ValueError("Text gol primit pentru extracția JSON.")
     full_text = text.strip()
+    
+    # 1. Elimină ```json și ```
     if full_text.startswith('```json'):
         full_text = full_text.replace('```json', '', 1).strip()
     if full_text.endswith('```'):
         full_text = full_text[:-3].strip()
+        
     try:
+        # 2. Încearcă direct
         return json.loads(full_text)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError as e_loads:
+        # 3. Încearcă să găsească {...}
         try:
+            # Găsește primul '{' și ultimul '}'
             start_index = full_text.index('{')
             end_index = full_text.rindex('}') + 1
             return json.loads(full_text[start_index:end_index])
-        except Exception as e:
-            raise ValueError(f"Eroare la extragerea JSON: {e}. Text: {full_text[:500]}...")
+        except Exception as e_extract:
+            # Eroarea finală (include detalii mai bune)
+            raise ValueError(f"Eroare la extragerea JSON: {e_extract} (Origine: {e_loads}). Text: {full_text[:500]}...")
 
-def call_gemini_safe(prompt):
+# 2. Funcție pentru a obține textul brut de la AI (înlocuiește vechiul call_gemini_safe)
+def call_gemini_raw(prompt):
     if gemini_client is None:
-        # Returnează o eroare specifică pentru client neinițializat
         return {"error": "Eroare de configurare server", "details": "Clientul AI nu a putut fi inițializat (API Key lipsă/invalidă)."}
     try:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt
         )
-        return safe_json_extract(response.text)
+        # Returnează textul brut, nu încearcă JSON
+        return response.text
     except Exception as e:
         # Eroare de API, Rețea sau altceva.
         return {"error": "Eroare de comunicare AI", "details": str(e)}
+
+# 3. Funcție pentru a obține JSON (noua funcție pe care o veți folosi pentru rutele care cer JSON)
+def call_gemini_json(prompt):
+    raw_text = call_gemini_raw(prompt)
+    
+    # Verifică dacă raw_text a returnat o eroare de configurare/comunicare
+    if isinstance(raw_text, dict) and "error" in raw_text:
+        return raw_text 
+    
+    try:
+        # Încearcă să extragă JSON din textul brut
+        return safe_json_extract(raw_text)
+    except ValueError as e:
+        # Eroare de extracție JSON
+        return {"error": "Eroare la extragerea JSON", "details": str(e), "raw_text_received": raw_text[:500]}
 
 # --------------------------
 # ROUTE: Procesare descriere job
@@ -335,5 +359,6 @@ def coach_next():
 if __name__ == '__main__':
     print("🚀 Server Flask robust pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
