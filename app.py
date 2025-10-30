@@ -299,7 +299,6 @@ def evaluate_answer():
         response = gemini_client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
-            timeout=20
         )
         print("Raw Gemini response:", response.text)
         result = safe_json_extract(response.text)
@@ -353,7 +352,6 @@ def generate_report():
         response = gemini_client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
-            timeout=20  # previne blocarea serverului
         )
 
         print("Raw Gemini response:", response.text)  # Debug
@@ -469,6 +467,7 @@ def coach_next():
 if __name__ == '__main__':
     print("🚀 Server Flask pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
 
 
 
