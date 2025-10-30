@@ -73,6 +73,7 @@ def call_gemini_safe(prompt):
 def process_text():
     data = request.get_json()
     job_text = data.get('text', '').strip()
+
     if not job_text:
         return jsonify({"error": "Descrierea postului (text) este obligatorie."}), 400
 
@@ -82,8 +83,15 @@ def process_text():
         "scurt și clar, de maxim 3-4 paragrafe."
     )
 
-    result = call_gemini_safe(prompt)
-    return jsonify(result), 200 if "error" not in result else 500
+    try:
+        result = call_gemini_safe(prompt)
+        print("✅ process-text rezultat:", result)
+        return jsonify(result), (200 if "error" not in result else 500)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print("❌ Eroare gravă în /process-text:", str(e))
+        return jsonify({"error": "Eroare internă la procesare", "details": str(e)}), 500
 
 # --------------------------
 # ROUTE: Generare întrebări interviu
@@ -322,3 +330,4 @@ def coach_next():
 if __name__ == '__main__':
     print("🚀 Server Flask robust pornit pe http://0.0.0.0:5000/")
     app.run(host='0.0.0.0', port=5000, debug=True)
+
