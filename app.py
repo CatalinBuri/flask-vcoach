@@ -304,3 +304,4 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
