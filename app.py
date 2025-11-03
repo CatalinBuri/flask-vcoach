@@ -1,11 +1,16 @@
-# server_vcoach_robust.py
+# ===============================================
+# server_vcoach_robust.py — Versiune optimizată JSON
+# ===============================================
 import os
 import json
+import hashlib
 import traceback
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from google import genai
 from dotenv import load_dotenv
+from google import genai
+import orjson
+from flask_compress import Compress
 
 # --------------------------
 # Încarcă variabilele de mediu (.env)
@@ -13,8 +18,10 @@ load_dotenv()
 API_KEY = os.environ.get("GEMINI_API_KEY")
 
 # --------------------------
-# Inițializare Flask
+# Inițializare Flask + Compresie HTTP
 app = Flask(__name__)
+app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
+Compress(app)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 # --------------------------
@@ -35,366 +42,265 @@ try:
 except Exception as e:
     print(f"❌ Eroare la inițializarea Gemini: {e}")
 
-# --------------------------
-# UTILITĂȚI
+# ===========================================================
+# 🔧 FUNCȚII UTILE GENERALE (JSON, VALIDARE, RĂSPUNSURI)
+# ===========================================================
 
-# 1. Funcția îmbunătățită pentru extracția JSON (înlocuiește vechiul safe_json_extract)
+def jsonify_fast(data, code=200):
+    """Serializare rapidă + minificată cu orjson."""
+    return app.response_class(
+        orjson.dumps(data),
+        status=code,
+        mimetype='application/json'
+    )
+
+def api_response(payload=None, error=None, code=200, meta=None):
+    """Formatează răspunsurile JSON într-o structură uniformă."""
+    base = {
+        "status": "ok" if not error else "error",
+        "payload": payload if not error else None,
+        "error": str(error) if error else None,
+        "meta": meta or {}
+    }
+    # Calcul checksum pentru integritate
+    checksum_data = json.dumps(payload or {}, separators=(',', ':'), sort_keys=True)
+    base["_checksum"] = hashlib.md5(checksum_data.encode()).hexdigest()
+    return jsonify_fast(base, code)
+
+def validate_fields(data, required_fields):
+    """Verifică existența câmpurilor obligatorii în request."""
+    if not isinstance(data, dict):
+        raise ValueError("Body JSON invalid.")
+    missing = [f for f in required_fields if not data.get(f)]
+    if missing:
+        raise ValueError(f"Lipsesc câmpurile: {', '.join(missing)}")
+
+# ===========================================================
+# 🔍 UTILITĂȚI AI (Gemini + Extracție JSON)
+# ===========================================================
+
 def safe_json_extract(text):
+    """Extragere robustă JSON din textul răspuns AI."""
     if not text:
         raise ValueError("Text gol primit pentru extracția JSON.")
     full_text = text.strip()
-    
-    # 1. Elimină ```json și ```
     if full_text.startswith('```json'):
         full_text = full_text.replace('```json', '', 1).strip()
     if full_text.endswith('```'):
         full_text = full_text[:-3].strip()
-        
-    try:
-        # 2. Încearcă direct
-        return json.loads(full_text)
-    except json.JSONDecodeError as e_loads:
-        # 3. Încearcă să găsească {...}
-        try:
-            # Găsește primul '{' și ultimul '}'
-            start_index = full_text.index('{')
-            end_index = full_text.rindex('}') + 1
-            return json.loads(full_text[start_index:end_index])
-        except Exception as e_extract:
-            # Eroarea finală (include detalii mai bune)
-            raise ValueError(f"Eroare la extragerea JSON: {e_extract} (Origine: {e_loads}). Text: {full_text[:500]}...")
 
-# 2. Funcție pentru a obține textul brut de la AI 
+    try:
+        return json.loads(full_text)
+    except json.JSONDecodeError:
+        start_index = full_text.find('{')
+        end_index = full_text.rfind('}') + 1
+        if start_index == -1 or end_index == -1:
+            raise ValueError("Format JSON invalid sau incomplet.")
+        return json.loads(full_text[start_index:end_index])
+
 def call_gemini_raw(prompt):
+    """Apelează modelul Gemini și returnează text brut."""
     if gemini_client is None:
-        return {"error": "Eroare de configurare server", "details": "Clientul AI nu a putut fi inițializat (API Key lipsă/invalidă)."}
+        return {"error": "Eroare configurare server", "details": "Client AI neinițializat."}
     try:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
             contents=prompt
-            # Eliminat: timeout=25
         )
-        # Returnează textul brut
         return response.text
-    # Aceste exceptii sunt acum definite datorita Pasului 1
-    except DeadlineExceededError as e:
-        return {"error": "Eroare de comunicare AI (Timeout)", "details": "Serviciul AI a depășit timpul maxim de răspuns (25s). Încercați din nou.", "code": 504}
-    except APIError as e:
-        # Gestionează alte erori API
-        return {"error": "Eroare API Gemini", "details": str(e), "code": 500}
     except Exception as e:
-        # Eroare de Rețea sau altceva.
-        return {"error": "Eroare de comunicare AI (Necunoscută)", "details": str(e), "code": 500}
-# 3. Funcție pentru a obține JSON 
-def call_gemini_json(prompt):
-    raw_text = call_gemini_raw(prompt)
-    
-    # Verifică dacă raw_text a returnat o eroare de configurare/comunicare
-    if isinstance(raw_text, dict) and "error" in raw_text:
-        return raw_text 
-    
-    try:
-        # Încearcă să extragă JSON din textul brut
-        return safe_json_extract(raw_text)
-    except ValueError as e:
-        # Eroare de extracție JSON
-        return {"error": "Eroare la extragerea JSON", "details": str(e), "raw_text_received": raw_text[:500]}
+        return {"error": "Eroare comunicare AI", "details": str(e)}
 
-# --------------------------
-# ROUTE: Procesare descriere job (RAW)
+def call_gemini_json(prompt):
+    """Apelează Gemini și extrage JSON valid."""
+    raw = call_gemini_raw(prompt)
+    if isinstance(raw, dict) and "error" in raw:
+        return raw
+    try:
+        return safe_json_extract(raw)
+    except Exception as e:
+        return {"error": "Eroare parsare JSON", "details": str(e), "raw_text": raw[:400]}
+
+# ===========================================================
+# 🔹 ROUTE DEFINITIONS (API)
+# ===========================================================
+
 @app.route('/process-text', methods=['POST'])
 def process_text():
-    data = request.get_json()
-    job_text = data.get('text', '').strip()
-
-    if not job_text:
-        return jsonify({"error": "Descrierea postului (text) este obligatorie."}), 400
-
-    prompt = (
-        f"Analizează această descriere de job: '{job_text}'. "
-        "Extrage informațiile cheie (rol, cerințe, responsabilități) și oferă un rezumat "
-        "scurt și clar, de maxim 3-4 paragrafe."
-    )
-
     try:
-        # 🎯 FOLOSIM: call_gemini_raw
-        raw_result = call_gemini_raw(prompt) 
-        
-        if isinstance(raw_result, dict) and "error" in raw_result:
-            return jsonify(raw_result), 500
+        data = request.get_json(force=True)
+        validate_fields(data, ['text'])
+        job_text = data['text'].strip()
 
-        # Returnăm textul învelit în JSON
-        return jsonify({"processed_text": raw_result}), 200 
-    
+        prompt = (
+            f"Analizează această descriere de job: '{job_text}'. "
+            "Extrage informațiile cheie (rol, cerințe, responsabilități) și oferă un rezumat scurt (max 4 paragrafe)."
+        )
+
+        raw = call_gemini_raw(prompt)
+        if isinstance(raw, dict) and "error" in raw:
+            return api_response(error=raw.get("error"), code=500)
+        return api_response(payload={"t": raw})
     except Exception as e:
         traceback.print_exc()
-        print("❌ Eroare gravă în /process-text:", str(e))
-        return jsonify({"error": "Eroare internă neprevăzută", "details": str(e)}), 500
+        return api_response(error=str(e), code=400)
 
-# --------------------------
-# ROUTE: Generare întrebări interviu (JSON)
 @app.route('/generate-questions', methods=['POST'])
 def generate_questions():
-    data = request.get_json()
-    cv_text = data.get('cv_text', '')
-    job_summary = data.get('job_summary', '')
-    prompt = (
-        f"Ești un recrutor AI. Pe baza acestui rezumat al postului: {job_summary} și CV: {cv_text}, "
-        "generează 5 întrebări de interviu comportamentale unice, relevante și de nivel avansat. "
-        "Returnează JSON strict: {'questions': [{'question': 'Întrebarea 1?'}, {'question': 'Întrebarea 2?'}, ...]}."
-    )
-    # 🎯 FOLOSIM: call_gemini_json
-    result = call_gemini_json(prompt)
-    return jsonify(result), 200 if "error" not in result else 500
+    try:
+        data = request.get_json(force=True)
+        validate_fields(data, ['cv_text', 'job_summary'])
+        prompt = (
+            f"Ești un recrutor AI. Pe baza rezumatului postului: {data['job_summary']} "
+            f"și CV: {data['cv_text']}, generează 5 întrebări de interviu comportamentale relevante. "
+            "Returnează JSON strict: {'questions': ['Întrebarea 1?', 'Întrebarea 2?', ...]}"
+        )
+        res = call_gemini_json(prompt)
+        return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
+    except Exception as e:
+        return api_response(error=str(e), code=400)
 
-# --------------------------
-# ROUTE: Analiză CV vs Job (JSON)
 @app.route('/analyze-cv', methods=['POST'])
 def analyze_cv():
-    data = request.get_json()
-    cv_text = data.get('cv_text', '').strip()
-    job_text = data.get('job_text', '').strip()
-    if not cv_text or not job_text:
-        return jsonify({"error": "CV și Job Description sunt necesare."}), 400
+    try:
+        data = request.get_json(force=True)
+        validate_fields(data, ['cv_text', 'job_text'])
+        prompt = f"""
+        Evaluează compatibilitatea CV-ului cu Job-ul:
+        CV: {data['cv_text']}
+        Job: {data['job_text']}
+        Returnează JSON strict:
+        {{
+          "compatibility_percent": 0-100,
+          "feedback_markdown": "Feedback detaliat în Markdown"
+        }}
+        """
+        res = call_gemini_json(prompt)
+        return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
+    except Exception as e:
+        return api_response(error=str(e), code=400)
 
-    prompt = f"""
-    Evaluează compatibilitatea CV-ului cu Job-ul:
-    CV: {cv_text}
-    Job Description: {job_text}
-    Returnează JSON strict cu:
-    {{
-      "compatibility_percent": 0-100,
-      "feedback_markdown": "Feedback detaliat în Markdown"
-    }}
-    """
-    # 🎯 FOLOSIM: call_gemini_json
-    result = call_gemini_json(prompt)
-    return jsonify(result), 200 if "error" not in result else 500
-
-# --------------------------
-# ROUTE: Generare interogări job hunt (JSON)
 @app.route('/generate-job-queries', methods=['POST'])
 def generate_job_queries():
-    cv_text = request.get_json().get('cv_text', '').strip()
-    if not cv_text:
-        return jsonify({"error": "CV este necesar."}), 400
-    prompt = f"""
-    Generează 5-10 interogări optimizate pentru job hunt bazate pe acest CV:
-    {cv_text}
-    Returnează JSON cu cheia 'queries', fiecare element fiind o interogare text.
-    """
-    # 🎯 FOLOSIM: call_gemini_json
-    result = call_gemini_json(prompt)
-    return jsonify(result), 200 if "error" not in result else 500
+    try:
+        data = request.get_json(force=True)
+        validate_fields(data, ['cv_text'])
+        prompt = f"Generează 5-10 interogări optimizate pentru job hunt bazate pe CV:\n{data['cv_text']}\nReturnează JSON cu 'queries': ['q1','q2',...]"
+        res = call_gemini_json(prompt)
+        return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
+    except Exception as e:
+        return api_response(error=str(e), code=400)
 
-# --------------------------
-# ROUTE: Generare Cover Letter (JSON)
 @app.route('/generate-cover-letter', methods=['POST'])
 def generate_cover_letter():
-    data = request.get_json()
-    cv_text = data.get('cv_text', '')
-    job_summary = data.get('job_summary', '')
-    prompt = f"""
-    Generează o scrisoare de intenție profesionistă:
-    CV: {cv_text}
-    Job Summary: {job_summary}
-    Returnează JSON cu cheia 'cover_letter' și textul scrisorii.
-    """
-    # 🎯 FOLOSIM: call_gemini_json
-    result = call_gemini_json(prompt)
-    return jsonify(result), 200 if "error" not in result else 500
+    try:
+        data = request.get_json(force=True)
+        validate_fields(data, ['cv_text', 'job_summary'])
+        prompt = f"Generează o scrisoare de intenție bazată pe:\nCV: {data['cv_text']}\nJOB: {data['job_summary']}\nReturnează JSON cu 'cover_letter'."
+        res = call_gemini_json(prompt)
+        return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
+    except Exception as e:
+        return api_response(error=str(e), code=400)
 
-# --------------------------
-# ROUTE: Optimizare profil LinkedIn (JSON)
 @app.route('/optimize-linkedin-profile', methods=['POST'])
 def optimize_linkedin_profile():
-    cv_text = request.get_json().get('cv_text', '')
-    prompt = f"""
-    Oferă recomandări detaliate pentru optimizarea profilului LinkedIn bazat pe acest CV:
-    {cv_text}
-    Returnează JSON cu cheia 'linkedin_tips', o listă de sugestii.
-    """
-    # 🎯 FOLOSIM: call_gemini_json
-    result = call_gemini_json(prompt)
-    return jsonify(result), 200 if "error" not in result else 500
+    try:
+        data = request.get_json(force=True)
+        validate_fields(data, ['cv_text'])
+        prompt = f"Oferă recomandări pentru optimizarea profilului LinkedIn bazat pe CV:\n{data['cv_text']}\nReturnează JSON cu 'linkedin_tips': [...]."
+        res = call_gemini_json(prompt)
+        return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
+    except Exception as e:
+        return api_response(error=str(e), code=400)
 
-# --------------------------
-# ROUTE: Generare Beginner FAQ (JSON)
 @app.route('/generate-beginner-faq', methods=['POST'])
 def generate_beginner_faq():
-    cv_text = request.get_json().get('cv_text', '').strip()
-    prompt_context = f"Generează 5 întrebări FAQ pentru începători bazate pe CV:\n{cv_text}" if cv_text else "Generează 5 întrebări FAQ standard pentru entry-level."
-    prompt = f"""
-    Ești un recrutor AI. {prompt_context}
-    Returnează DOAR JSON cu cheia "questions", fiecare obiect având:
-    {{
-      "question": "Întrebarea X?",
-      "explanation": "Scurtă explicație în Markdown"
-    }}
-    """
-    # 🎯 FOLOSIM: call_gemini_json
-    result = call_gemini_json(prompt)
-    return jsonify(result), 200 if "error" not in result else 500
+    try:
+        data = request.get_json(force=True)
+        cv_text = data.get('cv_text', '').strip()
+        prompt = (
+            f"Ești un recrutor AI. Generează 5 întrebări FAQ pentru începători bazate pe CV:\n{cv_text or 'Standard entry-level'}\n"
+            "Returnează JSON: {'questions':[{'q':'Întrebarea?','exp':'Explicație Markdown'}]}"
+        )
+        res = call_gemini_json(prompt)
+        return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
+    except Exception as e:
+        return api_response(error=str(e), code=400)
 
-# --------------------------
-# ROUTE: Evaluare răspuns utilizator (JSON)
 @app.route('/evaluate-answer', methods=['POST'])
 def evaluate_answer():
-    data = request.get_json()
-    question = data.get('question')
-    user_answer = data.get('answer')
-    history = data.get('history', []) # Luăm tot istoricul
-    
-    # Pregătire context din istoric (opțional, dacă AI-ul îl folosește)
-    history_text = "\n".join([f"Q: {h.get('question')}\nA: {h.get('answer')}\n" for h in history])
+    try:
+        data = request.get_json(force=True)
+        validate_fields(data, ['question', 'answer'])
+        history = data.get('history', [])
+        history_text = "\n".join([f"Q:{h.get('question')} A:{h.get('answer')}" for h in history])
 
-    # Setează promptul pentru AI
-    prompt = f"""
-    Evaluează răspunsul utilizatorului la următoarea întrebare.
-    CONTEXT INTERVIU (Istoric):
-    {history_text}
-    
-    Întrebare curentă: {question}
-    Răspuns utilizator: {user_answer}
-    
-    Returnează JSON strict cu:
-    {{
-      "current_evaluation": {{"nota_finala": 0-10,"claritate": 0-10,"relevanta": 0-10,"structura": 0-10,"feedback": "Feedback detaliat în Markdown"}},
-      "comparative_feedback": {{"feedback": "Feedback evolutiv, bazat pe istoric (dacă există) în Markdown."}}
-    }}
-    """
-    # 🎯 FOLOSIM: call_gemini_json
-    result = call_gemini_json(prompt)
-    return jsonify(result), 200 if "error" not in result else 500
+        prompt = f"""
+        Evaluează răspunsul utilizatorului.
+        Context:
+        {history_text}
+        Întrebare: {data['question']}
+        Răspuns: {data['answer']}
+        Returnează JSON strict:
+        {{
+          "current_evaluation": {{"nota_finala":0-10,"claritate":0-10,"relevanta":0-10,"structura":0-10,"feedback":"Markdown"}},
+          "comparative_feedback": {{"feedback":"Markdown"}}
+        }}
+        """
+        res = call_gemini_json(prompt)
+        return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
+    except Exception as e:
+        return api_response(error=str(e), code=400)
 
-# --------------------------
-# ROUTE: Generare raport final (JSON)
 @app.route('/generate-report', methods=['POST'])
 def generate_report():
-    data = request.get_json()
-    faq_history = data.get('history', [])
-    job_summary = data.get('job_summary', '')
-    cv_text = data.get('cv_text', '')
-    if not faq_history:
-        return jsonify({"error": "Istoricul interviului este gol"}), 400
+    try:
+        data = request.get_json(force=True)
+        validate_fields(data, ['history', 'job_summary', 'cv_text'])
+        faq_history = data['history']
+        if not faq_history:
+            return api_response(error="Istoric interviu gol", code=400)
 
-    history_text = ""
-    for idx, entry in enumerate(faq_history):
-        q = entry.get('question', 'N/A')
-        a = entry.get('answer', 'N/A')
-        eval_dict = entry.get('evaluation', {})
-        note = eval_dict.get('nota_finala', 'N/A')
-        feedback = eval_dict.get('feedback', 'N/A')
-        history_text += f"--- Întrebarea {idx+1} (Nota: {note}/10) ---\nQ: {q}\nA: {a}\nFeedback: {feedback}\n\n"
+        hist = ""
+        for i, h in enumerate(faq_history):
+            q, a, ev = h.get('question', ''), h.get('answer', ''), h.get('evaluation', {})
+            hist += f"Q{i+1}: {q}\nA:{a}\nNote:{ev.get('nota_finala','N/A')}/10\nFeedback:{ev.get('feedback','')}\n"
 
-    prompt = f"""
-    Ești un Career Coach AI. Folosește istoricul pentru a genera un raport final.
-    FORMAT JSON STRICT:
-    {{
-      "final_score": "medie din scoruri",
-      "summary": "Sinteză generală în Markdown",
-      "key_strengths": ["3 puncte forte"],
-      "areas_for_improvement": ["3 arii de îmbunătățire"],
-      "next_steps_recommendation": "Recomandări pentru următorii pași"
-    }}
-    ISTORIC INTERVIU:\n{history_text}
-    JOB SUMMARY:\n{job_summary}
-    CV TEXT:\n{cv_text}
-    """
-    # 🎯 FOLOSIM: call_gemini_json
-    result = call_gemini_json(prompt)
-    return jsonify(result), 200 if "error" not in result else 500
-
-# --------------------------
-# ROUTE: Rezultate HTML STAR (RAW - returnează text HTML)
-@app.route('/coach-results-html', methods=['POST'])
-def coach_results_html():
-    data = request.get_json()
-    history = data.get('history', [])
-    if not history:
-        return "<h3>Nu există răspunsuri de procesat</h3>", 400
-
-    html_content = """
-    <html lang='ro'>
-    <head>
-        <meta charset='UTF-8'>
-        <title>Coach Feedback STAR</title>
-        <style>
-            body { font-family: Arial, sans-serif; background: #f4f7f6; padding: 20px; color: #2c3e50; }
-            h1 { text-align: center; color: #2980b9; }
-            .entry { background: #fff; padding: 15px; margin: 15px 0; border-radius: 10px; box-shadow: 0 3px 10px rgba(0,0,0,0.08); }
-            .question { font-weight: bold; color: #34495e; }
-            .user-answer, .star-answer { margin-top: 10px; padding: 10px; border-radius: 6px; background: #ecf0f1; white-space: pre-wrap; }
-            .star-answer { border-left: 5px solid #2ecc71; background: #e8f6ef; }
-        </style>
-    </head>
-    <body>
-        <h1>Rezultate Coach - Versiune STAR</h1>
-    """
-    for idx, entry in enumerate(history):
-        question = entry.get('question', 'Întrebare lipsă')
-        user_answer = entry.get('answer', 'Răspuns lipsă')
-        
         prompt = f"""
-        Întrebarea: {question}
-        Răspunsul utilizatorului: {user_answer}
-        Te rog să rescrii acest răspuns într-o versiune optimizată STAR (Situation, Task, Action, Result).
-        Returnează DOAR textul răspunsului optimizat.
+        Ești un Career Coach AI. Generează raport final.
+        Format JSON:
+        {{
+          "final_score": "medie scoruri",
+          "summary": "Markdown",
+          "key_strengths": ["3 puncte forte"],
+          "areas_for_improvement": ["3 arii de îmbunătățire"],
+          "next_steps_recommendation": "Text"
+        }}
+        Istoric:\n{hist}\nJOB:\n{data['job_summary']}\nCV:\n{data['cv_text']}
         """
-        # 🎯 FOLOSIM: call_gemini_raw
-        star_answer_result = call_gemini_raw(prompt)
-        
-        star_answer = star_answer_result if isinstance(star_answer_result, str) else star_answer_result.get("details", "Eroare generare STAR")
-        
-        html_content += f"""
-        <div class='entry'>
-            <div class='question'>Întrebarea {idx+1}: {question}</div>
-            <div class='user-answer'><strong>Răspunsul tău:</strong>\n{user_answer}</div>
-            <div class='star-answer'><strong>Răspuns STAR optimizat:</strong>\n{star_answer}</div>
-        </div>
-        """
-    html_content += "</body></html>"
-    return html_content, 200
+        res = call_gemini_json(prompt)
+        return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
+    except Exception as e:
+        return api_response(error=str(e), code=400)
 
-# --------------------------
-# ROUTE: STAR next (RAW - returnează textul STAR în JSON)
 @app.route('/coach-next', methods=['POST'])
 def coach_next():
-    data = request.get_json()
-    question = data.get('question')
-    user_answer = data.get('user_answer')
-    if not question or not user_answer:
-        return jsonify({"error": "Întrebare și răspuns obligatorii"}), 400
+    try:
+        data = request.get_json(force=True)
+        validate_fields(data, ['question', 'user_answer'])
+        prompt = f"Rescrie răspunsul utilizatorului într-un format STAR. Returnează DOAR textul rezultat."
+        res = call_gemini_raw(f"{prompt}\nÎntrebare:{data['question']}\nRăspuns:{data['user_answer']}")
+        if isinstance(res, dict) and "error" in res:
+            return api_response(error=res["error"], code=500)
+        return api_response(payload={"q": data['question'], "a": data['user_answer'], "star": res})
+    except Exception as e:
+        return api_response(error=str(e), code=400)
 
-    prompt = f"""
-    Întrebarea: {question}
-    Răspunsul utilizatorului: {user_answer}
-    Te rog să rescrii acest răspuns într-o versiune optimizată STAR.
-    Returnează DOAR textul răspunsului optimizat.
-    """
-    # 🎯 FOLOSIM: call_gemini_raw
-    star_answer_result = call_gemini_raw(prompt)
-
-    if isinstance(star_answer_result, dict) and "error" in star_answer_result:
-        return jsonify(star_answer_result), 500
-
-    star_answer = star_answer_result
-
-    return jsonify({
-        "question": question,
-        "user_answer": user_answer,
-        "star_answer": star_answer
-    }), 200
-
-# --------------------------
-# PORNIRE SERVER
+# ===========================================================
+# 🚀 PORNIRE SERVER
+# ===========================================================
 if __name__ == '__main__':
-    print("🚀 Server Flask robust pornit pe [http://0.0.0.0:5000/](http://0.0.0.0:5000/)")
-    # Recomandăm să folosești gunicorn sau un alt server WSGI pentru producție.
-    # Dacă rulezi local, lasă app.run.
-    # app.run(host='0.0.0.0', port=5000, debug=True)
-    # Pentru Render, de obicei se folosește un entry point gunicorn, dar lăsăm app pentru testare locală.
+    print("🚀 Server Flask compact și robust pornit pe http://0.0.0.0:5000/")
+    # Pentru producție: folosește gunicorn
+    # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
-
-
-
