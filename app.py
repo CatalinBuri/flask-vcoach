@@ -63,8 +63,8 @@ def api_response(payload=None, error=None, code=200, meta=None):
         "meta": meta or {}
     }
     # Calcul checksum pentru integritate
-    checksum_data = json.dumps(payload or {}, separators=(',', ':'), sort_keys=True)
-    base["_checksum"] = hashlib.md5(checksum_data.encode()).hexdigest()
+    checksum_data = orjson.dumps(payload or {}, option=orjson.OPT_SORT_KEYS)
+    base["_checksum"] = hashlib.md5(checksum_data).hexdigest()
     return jsonify_fast(base, code)
 
 def validate_fields(data, required_fields):
@@ -207,7 +207,18 @@ def optimize_linkedin_profile():
     try:
         data = request.get_json(force=True)
         validate_fields(data, ['cv_text'])
-        prompt = f"Oferă recomandări pentru optimizarea profilului LinkedIn bazat pe CV:\n{data['cv_text']}\nReturnează JSON cu 'linkedin_tips': [...]."
+        
+        cv_text = data['cv_text']
+        domain = data.get('domain', '') # Extrage 'domain' dacă există
+        
+        domain_context = f"pentru postul din domeniul: {domain}" if domain else ""
+        
+        prompt = (
+            f"Oferă recomandări pentru optimizarea profilului LinkedIn bazat pe CV:\n{cv_text}\n"
+            f"Context: {domain_context}\n"
+            "Returnează JSON cu 'linkedin_tips': [...]."
+        )
+        
         res = call_gemini_json(prompt)
         return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
     except Exception as e:
@@ -220,7 +231,7 @@ def generate_beginner_faq():
         cv_text = data.get('cv_text', '').strip()
         prompt = (
             f"Ești un recrutor AI. Generează 5 întrebări FAQ pentru începători bazate pe CV:\n{cv_text or 'Standard entry-level'}\n"
-            "Returnează JSON: {'questions':[{'q':'Întrebarea?','exp':'Explicație Markdown'}]}"
+            "Returnează JSON: {'faq':[{'q':'Întrebarea?','exp':'Explicație Markdown'}]}"
         )
         res = call_gemini_json(prompt)
         return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
@@ -304,4 +315,5 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
 
