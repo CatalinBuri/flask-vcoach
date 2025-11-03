@@ -4,4 +4,4 @@ python-dotenv
 google-genai
 gunicorn
 orjson
-Flask-Compress
+flask_compress
