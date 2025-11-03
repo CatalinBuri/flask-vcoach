@@ -274,6 +274,11 @@ def generate_report():
 
         hist = ""
         for i, h in enumerate(faq_history):
+            # Asigură-te că h este un dicționar înainte de a apela .get()
+            if not isinstance(h, dict):
+                 # Opțional: forțează un mesaj de eroare clar dacă un element nu e dict
+                 raise ValueError(f"Istoric invalid la elementul {i}. Nu este dicționar.")
+            
             q, a, ev = h.get('question', ''), h.get('answer', ''), h.get('evaluation', {})
             hist += f"Q{i+1}: {q}\nA:{a}\nNote:{ev.get('nota_finala','N/A')}/10\nFeedback:{ev.get('feedback','')}\n"
 
@@ -290,9 +295,13 @@ def generate_report():
         Istoric:\n{hist}\nJOB:\n{data['job_summary']}\nCV:\n{data['cv_text']}
         """
         res = call_gemini_json(prompt)
+        # Dacă răspunsul AI are eroare, ar trebui să returneze 500, nu 400
         return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
+        
     except Exception as e:
-        return api_response(error=str(e), code=400)
+        # ⚠️ LINIA ESENȚIALĂ ADAUGATĂ PENTRU DIAGNOZĂ
+        traceback.print_exc() 
+        return api_response(error=f"Eroare internă. Verifică log-urile. Detaliu: {str(e)}", code=500)
 
 @app.route('/coach-next', methods=['POST'])
 def coach_next():
@@ -315,5 +324,6 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
 
 
