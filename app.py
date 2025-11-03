@@ -308,11 +308,24 @@ def coach_next():
     try:
         data = request.get_json(force=True)
         validate_fields(data, ['question', 'user_answer'])
+        user_answer = data['user_answer'].strip() # Extrage și curăță răspunsul
+
+        # 🟢 VERIFICAREA LOGICĂ A RĂSPUNSULUI SCURT
+        if len(user_answer.split()) < 5: 
+            error_message = "Răspunsul este prea scurt (min. 5 cuvinte) pentru o analiză STAR relevantă."
+            # Răspunsul este trimis înapoi ca "star_answer" pentru ca frontend-ul să îl afișeze corect
+            return api_response(payload={"q": data['question'], "a": user_answer, "star_answer": error_message})
+        
+        
         prompt = f"Rescrie răspunsul utilizatorului într-un format STAR. Returnează DOAR textul rezultat."
-        res = call_gemini_raw(f"{prompt}\nÎntrebare:{data['question']}\nRăspuns:{data['user_answer']}")
+        res = call_gemini_raw(f"{prompt}\nÎntrebare:{data['question']}\nRăspuns:{user_answer}")
+        
         if isinstance(res, dict) and "error" in res:
             return api_response(error=res["error"], code=500)
-        return api_response(payload={"q": data['question'], "a": data['user_answer'], "star": res})
+            
+        # CORECȚIA ESENȚIALĂ: Asigură-te că cheia este "star_answer"
+        return api_response(payload={"q": data['question'], "a": user_answer, "star_answer": res})
+        
     except Exception as e:
         return api_response(error=str(e), code=400)
 
@@ -324,6 +337,7 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
 
 
 
