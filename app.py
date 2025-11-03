@@ -71,17 +71,16 @@ def call_gemini_raw(prompt):
     try:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=prompt,
-            # ✨ SOLUȚIA: Adăugarea unui timeout explicit
-            timeout=25 
+            contents=prompt
+            # Eliminat: timeout=25
         )
         # Returnează textul brut
         return response.text
-    # Gestionează specific eroarea de timeout
+    # Aceste exceptii sunt acum definite datorita Pasului 1
     except DeadlineExceededError as e:
         return {"error": "Eroare de comunicare AI (Timeout)", "details": "Serviciul AI a depășit timpul maxim de răspuns (25s). Încercați din nou.", "code": 504}
     except APIError as e:
-        # Gestionează alte erori API (ex: quota exceeded, invalid request)
+        # Gestionează alte erori API
         return {"error": "Eroare API Gemini", "details": str(e), "code": 500}
     except Exception as e:
         # Eroare de Rețea sau altceva.
@@ -396,5 +395,6 @@ if __name__ == '__main__':
     # app.run(host='0.0.0.0', port=5000, debug=True)
     # Pentru Render, de obicei se folosește un entry point gunicorn, dar lăsăm app pentru testare locală.
     pass
+
 
 
