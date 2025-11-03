@@ -71,14 +71,21 @@ def call_gemini_raw(prompt):
     try:
         response = gemini_client.models.generate_content(
             model="gemini-2.5-flash",
-            contents=prompt
+            contents=prompt,
+            # ✨ SOLUȚIA: Adăugarea unui timeout explicit
+            timeout=25 
         )
-        # Returnează textul brut, nu încearcă JSON
+        # Returnează textul brut
         return response.text
+    # Gestionează specific eroarea de timeout
+    except DeadlineExceededError as e:
+        return {"error": "Eroare de comunicare AI (Timeout)", "details": "Serviciul AI a depășit timpul maxim de răspuns (25s). Încercați din nou.", "code": 504}
+    except APIError as e:
+        # Gestionează alte erori API (ex: quota exceeded, invalid request)
+        return {"error": "Eroare API Gemini", "details": str(e), "code": 500}
     except Exception as e:
-        # Eroare de API, Rețea sau altceva.
-        return {"error": "Eroare de comunicare AI", "details": str(e)}
-
+        # Eroare de Rețea sau altceva.
+        return {"error": "Eroare de comunicare AI (Necunoscută)", "details": str(e), "code": 500}
 # 3. Funcție pentru a obține JSON 
 def call_gemini_json(prompt):
     raw_text = call_gemini_raw(prompt)
@@ -389,4 +396,5 @@ if __name__ == '__main__':
     # app.run(host='0.0.0.0', port=5000, debug=True)
     # Pentru Render, de obicei se folosește un entry point gunicorn, dar lăsăm app pentru testare locală.
     pass
+
 
