@@ -166,15 +166,23 @@ def analyze_cv():
         data = request.get_json(force=True)
         validate_fields(data, ['cv_text', 'job_text'])
         prompt = f"""
-        Evaluează compatibilitatea CV-ului cu Job-ul:
-        CV: {data['cv_text']}
-        Job: {data['job_text']}
-        Returnează JSON strict:
+        Ești un expert în resurse umane. Analizează următorul CV în raport cu descrierea postului.
+        Obiectivul tău este să returnezi **DOAR** un obiect JSON care respectă STRICT următoarea schemă:
         {{
-          "compatibility_percent": 0-100,
-          "feedback_markdown": "Feedback detaliat în Markdown"
+          "compatibility_percent": <un număr întreg de la 0 la 100 care reprezintă scorul de potrivire>,
+          "feedback_markdown": "<O analiză detaliată și constructivă, formatată în Markdown, care explică scorul, punctele forte și lacunele CV-ului în raport cu jobul. NU include cod JSON sau alte marcaje în acest câmp.>"
         }}
-        """
+
+---
+CV:
+{cv_text}
+
+---
+JOB DESCRIPTION:
+{job_text}
+
+Răspunde DOAR cu obiectul JSON.
+"""
         res = call_gemini_json(prompt)
         return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
     except Exception as e:
@@ -339,6 +347,7 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
 
 
 
