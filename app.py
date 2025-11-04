@@ -248,26 +248,30 @@ def generate_cover_letter():
 
 @app.route('/optimize-linkedin-profile', methods=['POST'])
 def optimize_linkedin_profile():
-    try:
-        data = request.get_json(force=True)
-        validate_fields(data, ['cv_text'])
-        
-        cv_text = data['cv_text']
-        domain = data.get('domain', '') # Extrage 'domain' dacă există
-        
-        domain_context = f"pentru postul din domeniul: {domain}" if domain else ""
-        
-        prompt = (
-            f"Oferă recomandări pentru optimizarea profilului LinkedIn bazat pe CV:\n{cv_text}\n"
-            f"Context: {domain_context}\n"
-            "Returnează JSON cu 'linkedin_tips': [...]."
-        )
-        
-        res = call_gemini_json(prompt)
-        return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
-    except Exception as e:
-        return api_response(error=str(e), code=400)
-
+    try:
+        data = request.get_json(force=True)
+        validate_fields(data, ['cv_text', 'domain']) # Adaug 'domain' ca obligatoriu, deși get() merge
+        
+        cv_text = data['cv_text']
+        domain = data.get('domain', '') 
+        
+        domain_context = f"pentru postul din domeniul: {domain}" if domain else ""
+        
+        # 🟢 CORECȚIE CRITICĂ: Instrucțiunea către AI pentru a genera cele două chei distincte
+        prompt = (
+            f"Ești un expert în optimizare LinkedIn. Analizează CV-ul de mai jos și generează recomandări stricte de conținut {domain_context}.\n"
+            "Returnează DOAR un obiect JSON care respectă STRICT următoarea schemă:\n"
+            "{\n"
+            "  \"linkedin_headlines\": [\"Sloganul 1\", \"Sloganul 2\", \"Sloganul 3\"], \n"
+            "  \"linkedin_about\": \"O secțiune 'Despre mine' profesională, formatată în Markdown, bazată pe CV.\"\n"
+            "}\n"
+            f"CV:\n{cv_text}"
+        )
+        
+        res = call_gemini_json(prompt)
+        return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
+    except Exception as e:
+        return api_response(error=str(e), code=400)
 @app.route('/generate-beginner-faq', methods=['POST'])
 def generate_beginner_faq():
     try:
@@ -381,6 +385,7 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
 
 
 
