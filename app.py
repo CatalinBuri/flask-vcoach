@@ -178,6 +178,8 @@ def analyze_cv():
         res = call_gemini_json(prompt)
         return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
     except Exception as e:
+        traceback.print_exc() 
+        return api_response(error=f"Eroare internă. Detaliu: {str(e)}", code=500)
         return api_response(error=str(e), code=400)
 
 @app.route('/generate-job-queries', methods=['POST'])
@@ -337,6 +339,7 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
 
 
 
