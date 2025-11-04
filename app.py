@@ -204,10 +204,35 @@ def generate_job_queries():
     try:
         data = request.get_json(force=True)
         validate_fields(data, ['cv_text'])
-        prompt = f"Generează 5-10 interogări optimizate pentru job hunt bazate pe CV:\n{data['cv_text']}\nReturnează JSON cu 'queries': ['q1','q2',...]"
-        res = call_gemini_json(prompt)
+        
+        # 1. CORECȚIE: Variabila cv_text trebuie DEFINITĂ din data primită
+        cv_text = data.get('cv_text', '')
+        
+        # Am redenumit PROMPT_JOB_HUNT în 'prompt' pentru a se potrivi cu apelul de mai jos
+        prompt = f"""
+        Ești un expert în căutarea de joburi. Analizează următorul CV și generează o listă de 7 interogări de căutare (query-uri) extrem de eficiente și realiste, potrivite pentru motoare de căutare de joburi precum LinkedIn și eJobs.
+
+        Reguli stricte:
+        1. Returnează DOAR un obiect JSON cu schema solicitată.
+        2. Interogările generate trebuie să fie scurte (maxim 4 cuvinte).
+        3. Nu folosi operatori logici booleeni (AND, OR, NOT).
+        4. Concentrează fiecare interogare pe un Rol, o Competență Cheie sau o Combinație Rol + Industrie.
+
+        Schema JSON AȘTEPTATĂ:
+{{
+  "queries": ["Interogare 1", "Interogare 2", "Interogare 3", "Interogare 4", "Interogare 5", "Interogare 6", "Interogare 7"]
+}}
+
+---
+CV:
+{cv_text}
+"""
+        # 2. CORECȚIE: Variabila 'prompt' este acum definită corect
+        res = call_gemini_json(prompt) 
+        
         return api_response(payload=res) if "error" not in res else api_response(error=res["error"], code=500)
     except Exception as e:
+        # Păstrăm logica de eroare 400 pentru validări eșuate
         return api_response(error=str(e), code=400)
 
 @app.route('/generate-cover-letter', methods=['POST'])
@@ -356,6 +381,7 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
 
 
 
