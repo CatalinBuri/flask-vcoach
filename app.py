@@ -163,8 +163,17 @@ def generate_questions():
 @app.route('/analyze-cv', methods=['POST'])
 def analyze_cv():
     try:
+        # 1. Obține datele JSON trimise de JavaScript
         data = request.get_json(force=True)
+        
+        # 2. Validează (opțional, dar recomandat)
         validate_fields(data, ['cv_text', 'job_text'])
+        
+        # 3. EXTRASE VARIABILELE DIN DICTIONARUL 'data'
+        cv_text = data.get('cv_text', '')  # Variabila cv_text este DEFINITĂ AICI!
+        job_text = data.get('job_text', '') # Variabila job_text este DEFINITĂ AICI!
+
+        # 4. Construiește prompt-ul (acum cv_text și job_text sunt definite)
         prompt = f"""
         Ești un expert în resurse umane. Analizează următorul CV în raport cu descrierea postului.
         Obiectivul tău este să returnezi **DOAR** un obiect JSON care respectă STRICT următoarea schemă:
@@ -347,6 +356,7 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
 
 
 
