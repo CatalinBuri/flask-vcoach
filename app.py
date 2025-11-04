@@ -377,7 +377,19 @@ def coach_next():
         
     except Exception as e:
         return api_response(error=str(e), code=400)
+# ===========================================================
+# 🚀 ROUTĂ DE WAKEUP / PING (Pentru Keep-Alive/Render Cron Jobs)
+# ===========================================================
 
+@app.route('/ping', methods=['GET'])
+def ping_server():
+    """
+    Endpoint rapid pentru a răspunde cu succes (200 OK).
+    Folosit de Render Cron Job sau servicii externe de Keep-Alive.
+    """
+    # Returnăm un răspuns minimalist, dar care confirmă starea serverului
+    # Nu necesită api_response sau orjson, un simplu jsonify este suficient de rapid
+    return jsonify({"status": "ok", "message": "Server is awake and responding."}), 200
 # ===========================================================
 # 🚀 PORNIRE SERVER
 # ===========================================================
@@ -386,3 +398,4 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
