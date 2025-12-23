@@ -134,7 +134,13 @@ def process_text():
 
         prompt = (
             f"Analizează această descriere de job: '{job_text}'. "
-            "Extrage informațiile cheie (rol, cerințe, responsabilități) și oferă un rezumat scurt (max 4 paragrafe)."
+            "Realizează un rezumat profesional, sintetic și fluid, de maximum 4 paragrafe. "
+            "REGULI STRICTE: \n"
+            "1. NU folosi liste cu puncte (bullet points) sau liniuțe.\n"
+            "2. NU folosi caractere speciale pentru formatare (fără steluțe **, fără # pentru titluri).\n"
+            "3. NU include introduceri de tipul 'Iată analiza mea...'. Începe direct cu conținutul.\n"
+            "4. Tonul trebuie să fie cel al unui expert în recrutare care prezintă oportunitatea.\n"
+            "5. Textul trebuie să fie pur narativ (proză continuă)."
         )
 
         raw = call_gemini_raw(prompt)
@@ -398,4 +404,5 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
 
