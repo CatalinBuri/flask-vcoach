@@ -222,12 +222,14 @@ Post:
 
 @app.route("/generate-job-queries", methods=["POST"])
 def generate_job_queries():
-    data = request.get_json(force=True)
-    cv = data.get("cv_text", "").strip()
-    if not cv:
-        return api_response(error="CV lipsă", code=400)
-    
-    prompt = f"""
+    try:
+        data = request.get_json(force=True)
+        cv = data.get("cv_text", "").strip()
+        if not cv:
+            return api_response(error="CV lipsă", code=400)
+
+        # Prompt pentru Groq
+        prompt = f"""
 Ești un expert LinkedIn Job Search cu cunoștințe actualizate 2026 despre algoritmul de căutare și nomenclatura reală folosită în anunțurile de joburi internaționale și din România.
 
 Sarcina ta: analizează EXCLUSIV CV-ul furnizat și extrage:
@@ -240,31 +242,48 @@ Sarcina ta: analizează EXCLUSIV CV-ul furnizat și extrage:
 Pe baza acestor elemente generează **exact 7 căutări eficiente pentru LinkedIn Jobs** care să returneze oportunități cât mai potrivite profilului.
 
 Reguli obligatorii:
-1. Folosește **nomenclatura standard internațională** (engleză) pentru titluri de job – ex: "Project Manager", "Product Owner", "DevOps Engineer", "Data Analyst", "Frontend Developer" etc. Nu folosi traduceri românești în titluri.
+1. Folosește **nomenclatura standard internațională** (engleză) pentru titluri de job.
 2. Include combinații de **skills + tool-uri + nivel** (Junior / Mid / Senior / Lead) unde apare în CV.
-3. Folosește **Boolean simplu** unde ajută: "exact phrase", OR pentru sinonime, - pentru a exclude (ex: -internship -freelance -stagiu)
-4. Majoritatea căutărilor să fie în **engleză** (așa funcționează LinkedIn cel mai bine global și în România pentru joburi mid-senior).
-5. Poți include 1–2 variante și în română doar dacă CV-ul are experiență clar locală și joburi tip „Analist financiar”, „Manager proiect” etc.
-6. Fiecare căutare trebuie să fie realistă și să returneze rezultate relevante (nu prea generică: evită doar "Python"; combină cu rol sau industrie).
-7. Returnează **NUMAI JSON valid**, fără niciun text înainte sau după:
+3. Folosește **Boolean simplu** unde ajută: "exact phrase", OR pentru sinonime, - pentru a exclude.
+4. Majoritatea căutărilor să fie în **engleză**.
+5. Fiecare căutare să fie realistă și să returneze rezultate relevante.
+6. Returnează **NUMAI JSON valid** fără text suplimentar.
 
-{
+JSON exemplu de format (nu includeți text suplimentar, doar formatul):
+{{
   "queries": [
     "căutare 1 completă",
     "căutare 2 completă",
-    ...
+    "căutare 3 completă",
+    "căutare 4 completă",
+    "căutare 5 completă",
+    "căutare 6 completă",
     "căutare 7 completă"
   ]
-}
+}}
 
 CV:
 {cv}
 """
-    raw = gemini_text(prompt)
-    parsed = safe_json(raw)
-    if not parsed or "queries" not in parsed:
-        parsed = {"queries": []}
-    return api_response(payload=parsed)
+
+        # Apel robust Groq
+        raw = groq_text(prompt)
+        print("DEBUG: raw Groq response:", raw)
+
+        # Parsare JSON
+        parsed = safe_json(raw)
+        print("DEBUG: parsed JSON:", parsed)
+
+        # Dacă parsing-ul eșuează → AI ocupat
+        if not parsed or "queries" not in parsed:
+            return api_response(error="AI ocupat, încercați din nou", code=503)
+
+        # Returnăm payload-ul valid
+        return api_response(payload=parsed)
+
+    except Exception as e:
+        print("ERROR /generate-job-queries:", str(e))
+        return api_response(error="AI ocupat, încercați din nou", code=503)
 
 
 @app.route("/optimize-linkedin-profile", methods=["POST"])
@@ -376,4 +395,5 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
