@@ -45,7 +45,34 @@ if USE_GROQ:
     except Exception as e:
         print(f"❌ Eroare la inițializarea Groq: {str(e)}")
         groq_client = None
-
+def groq_text(prompt: str) -> str:
+    """
+    Trimite prompt-ul la Groq și returnează textul complet.
+    Dacă apare eroare, returnează string gol.
+    """
+    if not groq_client:
+        print("Groq client nu e inițializat!")
+        return ""
+    try:
+        res = groq_client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "Ești un expert LinkedIn Job Search și recruiter profesionist. "
+                        "Răspunde NUMAI cu JSON valid atunci când se solicită."
+                    )
+                },
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.2,
+            max_tokens=4096,
+        )
+        return res.choices[0].message.content.strip()
+    except Exception as e:
+        print(f"Groq error: {str(e)}")
+        return ""
 # =========================
 # UTILS
 # =========================
@@ -249,36 +276,21 @@ Reguli obligatorii:
 5. Fiecare căutare să fie realistă și să returneze rezultate relevante.
 6. Returnează **NUMAI JSON valid** fără text suplimentar.
 
-JSON exemplu de format (nu includeți text suplimentar, doar formatul):
-{{
-  "queries": [
-    "căutare 1 completă",
-    "căutare 2 completă",
-    "căutare 3 completă",
-    "căutare 4 completă",
-    "căutare 5 completă",
-    "căutare 6 completă",
-    "căutare 7 completă"
-  ]
-}}
-
 CV:
 {cv}
 """
 
-        # Apel robust Groq
+        # Folosim Groq dacă e disponibil, altfel Gemini
         raw = groq_text(prompt)
-        print("DEBUG: raw Groq response:", raw)
+        if not raw:
+            raw = gemini_text(prompt)
 
-        # Parsare JSON
         parsed = safe_json(raw)
-        print("DEBUG: parsed JSON:", parsed)
 
-        # Dacă parsing-ul eșuează → AI ocupat
+        # Dacă parsing-ul eșuează sau nu avem "queries", returnăm 503
         if not parsed or "queries" not in parsed:
             return api_response(error="AI ocupat, încercați din nou", code=503)
 
-        # Returnăm payload-ul valid
         return api_response(payload=parsed)
 
     except Exception as e:
@@ -395,5 +407,6 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
