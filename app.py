@@ -234,37 +234,41 @@ def analyze_cv():
         job = clean_text(job_raw)
 
         # =============================
-        # CHUNKING CV-ul
+        # CHUNKING CV și Job
         # =============================
         MAX_CHUNK_SIZE = 2000  # caractere aproximative per chunk
         cv_chunks = [cv[i:i+MAX_CHUNK_SIZE] for i in range(0, len(cv), MAX_CHUNK_SIZE)]
+        job_chunks = [job[i:i+MAX_CHUNK_SIZE] for i in range(0, len(job), MAX_CHUNK_SIZE)]
 
         combined_feedback = []
         combined_percent = []
 
-        for idx, chunk in enumerate(cv_chunks):
-            prompt = f"""
-Ești un recrutor profesionist hibrid. Analizează compatibilitatea dintre acest segment de CV și cerințele postului.
+        # Iterăm peste combinații de chunk CV + Job
+        for idx_cv, chunk_cv in enumerate(cv_chunks):
+            for idx_job, chunk_job in enumerate(job_chunks):
+                prompt = f"""
+Ești un recrutor profesionist hibrid. Analizează compatibilitatea dintre acest segment de CV și acest segment de post.
 Estimează un procent realist (0-100) și oferă feedback detaliat, obiectiv, constructiv și motivant.
 Îmbină analiza umană (context, potențial de dezvoltare) cu evaluarea AI (aliniere la competențe, cuvinte-cheie, experiență cuantificabilă).
 Returnează NUMAI JSON valid:
 {{"compatibility_percent": număr_întreg, "feedback_markdown": "text feedback curat și profesionist"}}
 Folosește doar text simplu în feedback (paragrafe separate prin linie goală).
-CV segment {idx+1}:
-{chunk}
-Post:
-{job}
-"""
-            raw = gemini_text(prompt)
-            parsed = safe_json(raw)
 
-            if parsed and "compatibility_percent" in parsed and "feedback_markdown" in parsed:
-                combined_feedback.append(parsed["feedback_markdown"])
-                combined_percent.append(parsed["compatibility_percent"])
-            else:
-                # fallback pentru chunk
-                combined_feedback.append("Segmentul nu a putut fi analizat complet de AI.")
-                combined_percent.append(75)
+CV segment {idx_cv+1}:
+{chunk_cv}
+
+Job segment {idx_job+1}:
+{chunk_job}
+"""
+                raw = gemini_text(prompt)
+                parsed = safe_json(raw)
+
+                if parsed and "compatibility_percent" in parsed and "feedback_markdown" in parsed:
+                    combined_feedback.append(parsed["feedback_markdown"])
+                    combined_percent.append(parsed["compatibility_percent"])
+                else:
+                    combined_feedback.append("Segmentul nu a putut fi analizat complet de AI.")
+                    combined_percent.append(75)
 
         # =============================
         # COMBINARE FEEDBACK
@@ -484,6 +488,7 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
