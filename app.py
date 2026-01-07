@@ -72,12 +72,16 @@ def process_text():
     try:
         data = request.get_json(force=True)
         text_input = data.get('text', '').strip()
-        if not text_input: return api_response(error="Text lipsă", code=400)
+        if not text_input:
+            return api_response(error="Text lipsă", code=400)
         
-        prompt = f"Fă un rezumat fluid de max 4 paragrafe pentru: {text_input}. Fără bullet points, fără bold."
+        prompt = f"Fă un rezumat fluid de max 4 paragrafe pentru: {text_input}."
         res = call_gemini_raw(prompt)
-        return api_response(payload={"t": res})
-    except Exception as e: return api_response(error=str(e), code=500)
+        
+        # Trimitem textul direct în payload sub cheia 't'
+        return api_response(payload={"t": res}) 
+    except Exception as e:
+        return api_response(error=str(e), code=500)
 
 @app.route('/generate-questions', methods=['POST'])
 def generate_questions():
@@ -153,3 +157,4 @@ def ping(): return jsonify({"status": "awake"}), 200
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
+
