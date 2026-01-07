@@ -225,9 +225,9 @@ Descrierea postului:
 def analyze_cv():
     """
     Analizează compatibilitatea unui CV cu descrierea jobului.
-    - Curăță textul (clean_text)
-    - Împarte textul lung în chunks dacă e necesar
-    - Returnează JSON cu scor și feedback
+    - Curăță textul (păstrând diacriticele)
+    - Împarte textul lung în chunk-uri dacă e necesar
+    - Returnează JSON cu scor și feedback fluent, corect gramatical
     """
     try:
         data = request.get_json(force=True)
@@ -238,39 +238,62 @@ def analyze_cv():
             return api_response(error="Date lipsă: CV și Job sunt necesare", code=400)
 
         # =========================
-        # CLEAN TEXT
+        # CLEAN TEXT - păstrăm diacritice
         # =========================
-        cv_clean = clean_text(cv_raw)
-        job_clean = clean_text(job_raw)
+        def clean_text_utf8(text: str) -> str:
+            # Eliminăm doar caractere neprintabile, păstrăm diacriticele
+            return "".join(c for c in text if c.isprintable()).strip()
+
+        cv_clean = clean_text_utf8(cv_raw)
+        job_clean = clean_text_utf8(job_raw)
 
         print("DEBUG /analyze-cv - CV length:", len(cv_clean), "Job length:", len(job_clean))
 
         # =========================
-        # CHUNKING (dacă textul e prea lung)
+        # CHUNKING
         # =========================
-        cv_chunks = chunk_text(cv_clean, chunk_size=3000)
-        job_chunks = chunk_text(job_clean, chunk_size=3000)
+        def chunk_text(text: str, max_len: int = 3000) -> list:
+            chunks = []
+            start = 0
+            while start < len(text):
+                end = min(start + max_len, len(text))
+                chunks.append(text[start:end])
+                start = end
+            return chunks
 
-        # Combinăm în prompt
-        prompt = ""
+        cv_chunks = chunk_text(cv_clean)
+        job_chunks = chunk_text(job_clean)
+
+        # =========================
+        # COMBINARE CHUNK-URI
+        # =========================
+        combined_prompt_text = ""
         for cv_chunk, job_chunk in zip(cv_chunks, job_chunks):
-            prompt += f"CV:\n{cv_chunk}\n\nJob:\n{job_chunk}\n\n"
+            combined_prompt_text += f"CV:\n{cv_chunk}\n\nJob:\n{job_chunk}\n\n"
 
         # =========================
-        # CERERE LA MODEL (Groq sau Gemini)
+        # PROMPT FINAL - instrucțiuni clare pentru text fluent
         # =========================
         model_prompt = f"""
 Ești un recrutor profesionist hibrid. Analizează compatibilitatea dintre CV și cerințele postului.
-Oferă procentaj realist (0-100) și feedback detaliat, profesional și motivant.
+Oferă procentaj realist (0-100) și feedback detaliat, profesionist, motivant.
+Scrie **text fluent, corect gramatical, în română**, cu toate diacriticele.
+Nu folosi prescurtări sau formulări agramate.
 Returnează NUMAI JSON valid:
 {{"compatibility_percent": număr_întreg, "feedback_markdown": "text curat și profesionist"}}
 
-{prompt}
+{combined_prompt_text}
 """
 
+        # =========================
+        # CERERE LA MODEL
+        # =========================
         raw = gemini_text(model_prompt)
         print("DEBUG /analyze-cv - Raw AI response:", raw)
 
+        # =========================
+        # PARSARE JSON
+        # =========================
         parsed = safe_json(raw)
         if not parsed or "compatibility_percent" not in parsed or "feedback_markdown" not in parsed:
             print("DEBUG /analyze-cv - Fallback JSON")
@@ -282,11 +305,21 @@ Returnează NUMAI JSON valid:
                 )
             }
 
+        # =========================
+        # OPTIONAL: POLISH FINAL (dacă vrei să refacem textul după chunking)
+        # =========================
+        final_prompt = f"""
+        Re-formulează următorul feedback într-un text fluent, corect gramatical și cu diacritice:
+        {parsed['feedback_markdown']}
+        """
+        parsed['feedback_markdown'] = gemini_text(final_prompt) or parsed['feedback_markdown']
+
         return api_response(payload=parsed)
 
     except Exception as e:
         print("ERROR /analyze-cv:", str(e))
         return api_response(error=f"Eroare internă: {str(e)}", code=500)
+
 
 
 @app.route("/generate-job-queries", methods=["POST"])
@@ -456,3 +489,4 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
