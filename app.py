@@ -228,9 +228,35 @@ def generate_job_queries():
         return api_response(error="CV lipsă", code=400)
     
     prompt = f"""
-Ești un recrutor profesionist asistat de AI. Generează exact 7 căutări eficiente pe LinkedIn (cuvinte-cheie sau fraze) pentru a identifica oportunități potrivite profilului din CV.
-Returnează NUMAI JSON valid:
-{{"queries": ["căutare 1", "căutare 2", "căutare 3", "căutare 4", "căutare 5", "căutare 6", "căutare 7"]}}
+Ești un expert LinkedIn Job Search cu cunoștințe actualizate 2026 despre algoritmul de căutare și nomenclatura reală folosită în anunțurile de joburi internaționale și din România.
+
+Sarcina ta: analizează EXCLUSIV CV-ul furnizat și extrage:
+- roluri / poziții ocupate (folosește denumirile standard: Project Manager, nu „lider de proiect”; Senior Software Engineer, nu doar „programator senior”)
+- abilități tehnice și soft relevante
+- tool-uri, tehnologii, framework-uri, limbaje de programare menționate
+- domenii / industrii în care a lucrat
+- certificări (dacă există)
+
+Pe baza acestor elemente generează **exact 7 căutări eficiente pentru LinkedIn Jobs** care să returneze oportunități cât mai potrivite profilului.
+
+Reguli obligatorii:
+1. Folosește **nomenclatura standard internațională** (engleză) pentru titluri de job – ex: "Project Manager", "Product Owner", "DevOps Engineer", "Data Analyst", "Frontend Developer" etc. Nu folosi traduceri românești în titluri.
+2. Include combinații de **skills + tool-uri + nivel** (Junior / Mid / Senior / Lead) unde apare în CV.
+3. Folosește **Boolean simplu** unde ajută: "exact phrase", OR pentru sinonime, - pentru a exclude (ex: -internship -freelance -stagiu)
+4. Majoritatea căutărilor să fie în **engleză** (așa funcționează LinkedIn cel mai bine global și în România pentru joburi mid-senior).
+5. Poți include 1–2 variante și în română doar dacă CV-ul are experiență clar locală și joburi tip „Analist financiar”, „Manager proiect” etc.
+6. Fiecare căutare trebuie să fie realistă și să returneze rezultate relevante (nu prea generică: evită doar "Python"; combină cu rol sau industrie).
+7. Returnează **NUMAI JSON valid**, fără niciun text înainte sau după:
+
+{
+  "queries": [
+    "căutare 1 completă",
+    "căutare 2 completă",
+    ...
+    "căutare 7 completă"
+  ]
+}
+
 CV:
 {cv}
 """
@@ -350,3 +376,4 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
