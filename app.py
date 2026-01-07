@@ -126,11 +126,11 @@ def call_gemini_json(prompt):
 # ===========================================================
 
 @app.route('/process-text', methods=['POST'])
-def process_text():
-    try:
+try:
         data = request.get_json(force=True)
-        validate_fields(data, ['text'])
-        job_text = data['text'].strip()
+        text_input = data.get('text', '').strip()        
+        if not text_input:
+            return api_response(error="Textul lipsește", code=400)
 
         prompt = (
             f"Analizează această descriere de job: '{job_text}'. "
@@ -143,13 +143,23 @@ def process_text():
             "5. Textul trebuie să fie pur narativ (proză continuă)."
         )
 
-        raw = call_gemini_raw(prompt)
-        if isinstance(raw, dict) and "error" in raw:
-            return api_response(error=raw.get("error"), code=500)
-        return api_response(payload={"t": raw})
+      # VERIFICARE MODEL: Folosim identificatorul oficial pentru SDK-ul nou
+        response = gemini_client.models.generate_content(
+            model="gemini-2.5-flash", 
+            contents=prompt
+        )
+        
+        # Verificăm dacă există text în răspuns înainte de a-l accesa
+        if response and response.text:
+            return api_response(payload={"t": response.text})
+        else:
+            return api_response(error="AI a returnat un răspuns gol (posibil filtru de siguranță).", code=500)
+
     except Exception as e:
+        # Printează eroarea exactă în consola Render pentru a o vedea tu
+        print(f"--- EROARE CRITICĂ PROCESS-TEXT: {str(e)} ---")
         traceback.print_exc()
-        return api_response(error=str(e), code=400)
+        return api_response(error=f"Eroare Server: {str(e)}", code=500)
 
 @app.route('/generate-questions', methods=['POST'])
 def generate_questions():
@@ -404,6 +414,7 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
 
 
 
