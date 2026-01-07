@@ -530,8 +530,9 @@ Istoric interviu:
             "scor_final": 8
         }
     return api_response(payload=parsed)
-@app.route("/rewrite-cv-for-job-boards", methods=["POST"])
-def rewrite_cv_for_job_boards():
+
+@app.route("/reformulate-cv-for-job-boards", methods=["POST"])
+def reformulate_cv_for_job_boards():
     """
     Reformulează CV-ul pentru job boards (LinkedIn, Indeed, ATS).
     - Normalizează titluri
@@ -541,7 +542,9 @@ def rewrite_cv_for_job_boards():
     """
     try:
         data = request.get_json(force=True)
+
         cv_raw = data.get("cv_text", "").strip()
+        job_raw = data.get("job_text", "").strip()  # opțional, NU obligatoriu
 
         if not cv_raw:
             return api_response(error="CV lipsă", code=400)
@@ -551,57 +554,68 @@ def rewrite_cv_for_job_boards():
         prompt = f"""
 Ești un expert senior în recrutare internațională și sisteme ATS (2026).
 
-Sarcina ta este să REFORMULEZI CV-ul candidatului pentru a fi
-ușor de înțeles, corect interpretat și eficient pe platforme de joburi
-precum LinkedIn Jobs, Indeed, Glassdoor și ATS-uri automate.
+Sarcina ta este să REFORMULEZI CV-ul candidatului pentru a fi:
+- ușor de înțeles
+- corect interpretat
+- eficient pe platforme de joburi (LinkedIn, Indeed, Glassdoor)
+- compatibil cu ATS-uri automate
 
-REGULI STRICTE:
+REGULI STRICTE (OBLIGATORII):
 - NU inventa experiență
 - NU exagera senioritatea
 - NU adăuga skill-uri care nu apar explicit sau logic în CV
 - Păstrează realitatea profesională a candidatului
-- Tradu titlurile interne / nișate în titluri standard doar dacă există corespondență clară
-- Dacă NU există corespondență, menționează explicit acest lucru
+- Tradu titluri interne / nișate doar dacă există corespondență clară
+- Dacă NU există corespondență, MENȚIONEAZĂ EXPLICIT acest lucru
 
-STRUCTURA DE RĂSPUNS (JSON strict):
+STRUCTURA DE RĂSPUNS (JSON STRICT – fără text suplimentar):
 
 {{
   "normalized_titles": [
-    "Titlu standard 1",
-    "Titlu standard 2"
+    "Titlu standard (dacă există)"
   ],
   "cv_summary_for_job_boards": "Rezumat profesionist, clar, ATS-friendly (max 120 cuvinte)",
   "core_skills_keywords": [
-    "keyword 1",
-    "keyword 2",
-    "keyword 3"
+    "keyword ATS 1",
+    "keyword ATS 2"
   ],
-  "notes_for_candidate": "Observații oneste despre limitările de mapare sau claritate ale CV-ului"
+  "notes_for_candidate": "Observații oneste despre limitări, ambiguități sau lipsă de mapare clară"
 }}
 
 CV:
 {cv_clean}
+
+Descriere job (opțional – dacă este relevantă):
+{job_raw}
 """
 
         # =========================
-        # Apel Groq (prioritar)
+        # Apel AI (Groq → Gemini)
         # =========================
         raw = ""
+
         if USE_GROQ and groq_client:
             raw = groq_text(prompt)
-            print("DEBUG /rewrite-cv - raw Groq response:", raw)
+            app.logger.debug("DEBUG /reformulate-cv - raw Groq response")
 
-        # =========================
-        # Fallback Gemini
-        # =========================
         if not raw and gemini_client:
             raw = gemini_text(prompt)
-            print("DEBUG /rewrite-cv - raw Gemini response:", raw)
+            app.logger.debug("DEBUG /reformulate-cv - raw Gemini response")
 
         parsed = safe_json(raw)
-        print("DEBUG /rewrite-cv - parsed:", parsed)
+        app.logger.debug(f"DEBUG /reformulate-cv - parsed: {parsed}")
 
-        if not parsed or "cv_summary_for_job_boards" not in parsed:
+        # =========================
+        # Validare strictă rezultat
+        # =========================
+        required_keys = [
+            "normalized_titles",
+            "cv_summary_for_job_boards",
+            "core_skills_keywords",
+            "notes_for_candidate"
+        ]
+
+        if not parsed or not all(k in parsed for k in required_keys):
             return api_response(
                 error="AI nu a putut genera un rezultat valid pentru reformularea CV-ului",
                 code=503
@@ -610,17 +624,19 @@ CV:
         return api_response(payload=parsed)
 
     except Exception as e:
-        print("ERROR /rewrite-cv-for-job-boards:", str(e))
+        app.logger.exception("ERROR /reformulate-cv-for-job-boards")
         return api_response(
-            error=f"Eroare internă server: {str(e)}",
+            error="Eroare internă server în reformularea CV-ului",
             code=503
         )
+
 
 # =========================
 # START
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
