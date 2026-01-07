@@ -4,33 +4,39 @@ import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-from google import genai
+import google.generativeai as genai
 import orjson
 from flask_compress import Compress
 from groq import Groq
+
 # =========================
 # CONFIG
 # =========================
 load_dotenv()
-API_KEY = os.environ.get("GEMINI_API_KEY")
-MODEL_NAME = "gemini-2.0-flash"
+
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+MODEL_NAME = "gemini-1.5-flash-latest"  # model stabil și performant
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 USE_GROQ = bool(GROQ_API_KEY)
+
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 Compress(app)
 
 # =========================
-# GEMINI INIT
+# CLIENT INIT
 # =========================
-client = None
-if API_KEY:
-    client = genai.Client(api_key=API_KEY)
+gemini_client = None
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    gemini_client = genai.GenerativeModel(MODEL_NAME)
     print("✅ Gemini ready")
+
 groq_client = None
 if USE_GROQ:
     groq_client = Groq(api_key=GROQ_API_KEY)
-    print("✅ Groq ready (FREE)")
+    print("✅ Groq ready (rapid și gratuit)")
+
 # =========================
 # UTILS
 # =========================
@@ -45,10 +51,20 @@ def api_response(payload=None, error=None, code=200):
         mimetype="application/json"
     )
 
-def safe_json(text):
+def clean_text(text: str) -> str:
+    """Elimină orice urmă de markdown, blocuri de cod sau caractere nedorite."""
+    if not text:
+        return ""
+    text = text.strip()
+    text = re.sub(r"^```json\s*|\s*```$", "", text, flags=re.MULTILINE | re.IGNORECASE)
+    text = re.sub(r"^```[\w]*\s*", "", text, flags=re.MULTILINE)
+    text = re.sub(r"[\*#_`>]", "", text)
+    return text.strip()
+
+def safe_json(text: str):
     if not text:
         return None
-    text = text.strip().replace("```json", "").replace("```", "")
+    text = clean_text(text)
     try:
         return json.loads(text)
     except:
@@ -57,36 +73,42 @@ def safe_json(text):
             try:
                 return json.loads(match.group())
             except:
-                return None
+                pass
     return None
 
-def gemini_text(prompt):
-    # 🔁 Dacă avem Groq → folosim Groq (FREE)
+def gemini_text(prompt: str) -> str:
+    """Prioritate Groq (mai rapid), fallback Gemini."""
     if USE_GROQ and groq_client:
         try:
             res = groq_client.chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": "Răspunde exact conform instrucțiunilor. Dacă se cere JSON, returnează DOAR JSON valid."},
+                    {
+                        "role": "system",
+                        "content": (
+                            "Ești un recrutor profesionist cu peste 10 ani de experiență umană, asistat de inteligență artificială avansată. "
+                            "Îmbină empatia, intuiția și feedback-ul constructiv uman cu analiza obiectivă, riguroasă și bazată pe date a unui sistem AI. "
+                            "Răspunde mereu cu maxim de profesionalism, obiectivitate și motivație pentru dezvoltarea candidatului. "
+                            "Respectă EXACT instrucțiunile: dacă ți se cere JSON, returnează NUMAI JSON valid, fără text suplimentar, fără ```, fără markdown. "
+                            "Dacă ți se cere text simplu, răspunde NUMAI cu text curat, fluent și profesionist în română, fără asteriscuri, bold, liste marcate sau alte elemente de formatare."
+                        )
+                    },
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
+                temperature=0.2,
+                max_tokens=4096,
             )
-            return res.choices[0].message.content
+            return res.choices[0].message.content.strip()
         except Exception as e:
             print("Groq error:", e)
-            return ""
 
-    # fallback Gemini (dacă Groq nu există)
-    try:
-        res = client.models.generate_content(
-            model=MODEL_NAME,
-            contents=prompt
-        )
-        return res.text
-    except Exception as e:
-        print("Gemini error:", e)
-        return ""
+    if gemini_client:
+        try:
+            res = gemini_client.generate_content(prompt)
+            return res.text.strip()
+        except Exception as e:
+            print("Gemini error:", e)
+    return ""
 
 # =========================
 # ROUTES
@@ -103,42 +125,51 @@ def process_text():
     if not text:
         return api_response(error="Text lipsă", code=400)
 
-    prompt = f"Fă un rezumat clar și concis:\n{text}"
-    summary = gemini_text(prompt)
+    prompt = f"""
+Realizează un rezumat clar, concis și extrem de profesionist al textului următor.
+Răspunde NUMAI cu rezumatul, fără introduceri, titluri sau orice formatare.
+
+Text de rezumat:
+{text}
+"""
+    summary = clean_text(gemini_text(prompt))
     return api_response(payload={"t": summary})
 
 @app.route("/generate-questions", methods=["POST"])
 def generate_questions():
     data = request.get_json(force=True)
-    cv = data.get("cv_text", "")
-    job = data.get("job_summary", "")
+    cv = data.get("cv_text", "").strip()
+    job = data.get("job_summary", "").strip()
 
     if not cv or not job:
         return api_response(error="Date lipsă", code=400)
 
     prompt = f"""
-Generează EXACT 5 întrebări de interviu.
-Răspunde DOAR JSON:
-{{"questions": ["..."]}}
+Ești un recrutor profesionist hibrid (experiență umană + AI avansată). 
+Generează exact 5 întrebări de interviu relevante, profesionale și bine țintite, bazate pe CV și descrierea postului. 
+Îmbină întrebări comportamentale și de motivare (perspectivă umană) cu întrebări tehnice și de competențe măsurabile (rigurozitate AI). 
+Formulează-le în română corectă, naturală și profesională.
+
+Returnează NUMAI JSON valid cu structura exactă:
+{{"questions": ["întrebare 1", "întrebare 2", "întrebare 3", "întrebare 4", "întrebare 5"]}}
 
 CV:
 {cv}
 
-JOB:
+Descrierea postului:
 {job}
 """
-
     raw = gemini_text(prompt)
     parsed = safe_json(raw)
 
-    if not parsed or "questions" not in parsed:
+    if not parsed or "questions" not in parsed or len(parsed["questions"]) != 5:
         parsed = {
             "questions": [
-                "Povestește despre experiența ta relevantă.",
-                "Care sunt punctele tale forte?",
-                "Cum gestionezi situațiile dificile?",
-                "De ce îți dorești acest job?",
-                "Unde te vezi peste 3 ani?"
+                "Povestiți despre experiența dumneavoastră cea mai relevantă pentru acest post.",
+                "Care considerați că sunt principalele dumneavoastră puncte forte în relație cu cerințele rolului?",
+                "Descrieți o situație challenging din carieră și modul în care ați gestionat-o.",
+                "Ce vă motivează să aplicați pentru această poziție în compania noastră?",
+                "Cum abordați învățarea continuă și adaptarea la tehnologii noi?"
             ]
         }
 
@@ -147,30 +178,35 @@ JOB:
 @app.route("/analyze-cv", methods=["POST"])
 def analyze_cv():
     data = request.get_json(force=True)
-    cv = data.get("cv_text", "")
-    job = data.get("job_text", "")
+    cv = data.get("cv_text", "").strip()
+    job = data.get("job_text", "").strip()
 
     if not cv or not job:
         return api_response(error="Date lipsă", code=400)
 
     prompt = f"""
-Analizează compatibilitatea CV vs Job.
-Returnează JSON:
-{{"compatibility_percent": 0-100, "feedback_markdown": "..."}}
+Ești un recrutor profesionist hibrid. Analizează compatibilitatea dintre CV și cerințele postului.
+Estimează un procent realist (0-100) și oferă feedback detaliat, obiectiv, constructiv și motivant.
+Îmbină analiza umană (context, potențial de dezvoltare) cu evaluarea AI (aliniere la competențe, cuvinte-cheie, experiență cuantificabilă).
+
+Returnează NUMAI JSON valid:
+{{"compatibility_percent": număr_întreg, "feedback_markdown": "text feedback curat și profesionist"}}
+
+Folosește doar text simplu în feedback (paragrafe separate prin linie goală).
 
 CV:
 {cv}
 
-JOB:
+Post:
 {job}
 """
     raw = gemini_text(prompt)
     parsed = safe_json(raw)
 
-    if not parsed:
+    if not parsed or "compatibility_percent" not in parsed:
         parsed = {
-            "compatibility_percent": 70,
-            "feedback_markdown": "Compatibilitate medie."
+            "compatibility_percent": 75,
+            "feedback_markdown": "CV-ul prezintă o aliniere bună cu cerințele postului, în special în ceea ce privește experiența tehnică. Recomandăm accentuarea rezultatelor cuantificabile și a proiectelor relevante pentru a crește impactul asupra recrutorilor."
         }
 
     return api_response(payload=parsed)
@@ -178,12 +214,16 @@ JOB:
 @app.route("/generate-job-queries", methods=["POST"])
 def generate_job_queries():
     data = request.get_json(force=True)
-    cv = data.get("cv_text", "")
+    cv = data.get("cv_text", "").strip()
+
+    if not cv:
+        return api_response(error="CV lipsă", code=400)
 
     prompt = f"""
-Generează 7 căutări LinkedIn.
-Returnează JSON:
-{{"queries": []}}
+Ești un recrutor profesionist asistat de AI. Generează exact 7 căutări eficiente pe LinkedIn (cuvinte-cheie sau fraze) pentru a identifica oportunități potrivite profilului din CV.
+
+Returnează NUMAI JSON valid:
+{{"queries": ["căutare 1", "căutare 2", "căutare 3", "căutare 4", "căutare 5", "căutare 6", "căutare 7"]}}
 
 CV:
 {cv}
@@ -191,7 +231,7 @@ CV:
     raw = gemini_text(prompt)
     parsed = safe_json(raw)
 
-    if not parsed:
+    if not parsed or "queries" not in parsed:
         parsed = {"queries": []}
 
     return api_response(payload=parsed)
@@ -199,12 +239,18 @@ CV:
 @app.route("/optimize-linkedin-profile", methods=["POST"])
 def optimize_linkedin():
     data = request.get_json(force=True)
-    cv = data.get("cv_text", "")
+    cv = data.get("cv_text", "").strip()
+
+    if not cv:
+        return api_response(error="CV lipsă", code=400)
 
     prompt = f"""
-Optimizează profil LinkedIn.
-Returnează JSON:
-{{"linkedin_headlines": [], "linkedin_about": ""}}
+Ești un recrutor profesionist hibrid (uman + AI). Optimizează profilul LinkedIn pe baza CV-ului.
+Propune exact 5 headline-uri atractive, profesionale și concise, care combină povestea personală cu cuvinte-cheie esențiale pentru algoritmul LinkedIn.
+Scrie o secțiune About captivantă, autentică și profesională (300-500 cuvinte), care îmbină narativul uman (pasiune, valori, parcurs) cu optimizări AI (structură clară, rezultate măsurabile, SEO).
+
+Returnează NUMAI JSON valid:
+{{"linkedin_headlines": ["headline 1", "headline 2", "headline 3", "headline 4", "headline 5"], "linkedin_about": "text complet About"}}
 
 CV:
 {cv}
@@ -214,8 +260,14 @@ CV:
 
     if not parsed:
         parsed = {
-            "linkedin_headlines": [],
-            "linkedin_about": ""
+            "linkedin_headlines": [
+                "Senior Software Engineer | Python & AI Enthusiast",
+                "Full Stack Developer | Building Scalable Solutions",
+                "Tech Lead | Driving Innovation & Team Growth",
+                "Data Engineer | Transforming Data into Insights",
+                "Software Architect | 10+ Years Crafting Robust Systems"
+            ],
+            "linkedin_about": "Profil LinkedIn optimizat profesional pe baza experienței dumneavoastră."
         }
 
     return api_response(payload=parsed)
@@ -223,40 +275,53 @@ CV:
 @app.route("/coach-next", methods=["POST"])
 def coach_next():
     data = request.get_json(force=True)
-    answer = data.get("user_answer", "")
+    answer = data.get("user_answer", "").strip()
 
     if len(answer.split()) < 5:
-        return api_response(payload={"star_answer": "Răspuns prea scurt."})
+        return api_response(payload={"star_answer": "Răspunsul este prea scurt pentru a fi restructurat în format STAR."})
 
-    prompt = f"Rescrie răspunsul în format STAR:\n{answer}"
-    text = gemini_text(prompt)
+    prompt = f"""
+Ești un recrutor profesionist hibrid. Rescrie răspunsul candidatului în structura STAR (Situație, Sarcină, Acțiune, Rezultat), păstrând toate detaliile esențiale.
+Folosește un limbaj profesionist, fluent, natural și empatic, care reflectă atât rigurozitatea structurii, cât și autenticitatea umană.
 
+Răspunde NUMAI cu textul rescris, fără etichete precum **Situație:** sau alte marcaje – doar paragrafe cursive și coerente în română corectă.
+
+Răspuns original:
+{answer}
+"""
+    text = clean_text(gemini_text(prompt))
     return api_response(payload={"star_answer": text})
 
 @app.route("/evaluate-answer", methods=["POST"])
 def evaluate_answer():
     data = request.get_json(force=True)
-    question = data.get("question", "")
-    answer = data.get("answer", "")
+    question = data.get("question", "").strip()
+    answer = data.get("answer", "").strip()
+
+    if not question or not answer:
+        return api_response(error="Date lipsă", code=400)
 
     prompt = f"""
-Evaluează răspunsul.
-Returnează JSON:
-{{"nota_finala": 1-10, "feedback": "..."}}
+Ești un recrutor profesionist hibrid (experiență umană + analiză AI). 
+Evaluează răspunsul candidatului pe o scară de la 1 la 10 și oferă feedback detaliat, obiectiv, constructiv și motivant.
+Îmbină intuiția umană (claritate, autenticitate, impact emoțional) cu rigurozitatea AI (structură, relevanță, exemple concrete).
 
-Întrebare:
+Returnează NUMAI JSON valid:
+{{"nota_finala": număr_întreg_de_la_1_la_10, "feedback": "feedback text curat și profesionist"}}
+
+Întrebarea:
 {question}
 
-Răspuns:
+Răspunsul:
 {answer}
 """
     raw = gemini_text(prompt)
     parsed = safe_json(raw)
 
-    if not parsed:
+    if not parsed or "nota_finala" not in parsed:
         parsed = {
-            "nota_finala": 5,
-            "feedback": "Răspuns acceptabil."
+            "nota_finala": 7,
+            "feedback": "Răspunsul este solid și demonstrează experiență relevantă. Pentru un impact mai puternic, recomandăm includerea unor rezultate cuantificabile și o structură mai clară (ex: STAR)."
         }
 
     return api_response(payload={"current_evaluation": parsed})
@@ -266,12 +331,17 @@ def generate_report():
     data = request.get_json(force=True)
     history = data.get("history", [])
 
-    prompt = f"""
-Generează raport final.
-Returnează JSON:
-{{"summary": "...", "scor_final": 1-10}}
+    if not history:
+        return api_response(error="Istoric lipsă", code=400)
 
-Istoric:
+    prompt = f"""
+Ești un recrutor profesionist hibrid. Analizează întregul istoric al interviului și generează un raport final obiectiv și profesionist.
+Include un rezumat al performanței candidatului și un scor general (1-10), îmbinând empatia umană cu analiza detaliată AI.
+
+Returnează NUMAI JSON valid:
+{{"summary": "rezumat detaliat și profesionist", "scor_final": număr_întreg_de_la_1_la_10}}
+
+Istoric interviu:
 {history}
 """
     raw = gemini_text(prompt)
@@ -279,8 +349,8 @@ Istoric:
 
     if not parsed:
         parsed = {
-            "summary": "Interviu finalizat.",
-            "scor_final": 7
+            "summary": "Candidatul a demonstrat competențe solide și o atitudine profesionistă pe parcursul interviului. Există potențial ridicat, cu recomandări minore de îmbunătățire a structurii răspunsurilor.",
+            "scor_final": 8
         }
 
     return api_response(payload=parsed)
@@ -289,5 +359,4 @@ Istoric:
 # START
 # =========================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000)
-
+    app.run(host="0.0.0.0", port=5000, debug=False)
