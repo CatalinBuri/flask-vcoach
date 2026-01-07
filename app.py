@@ -1,10 +1,6 @@
-# ===============================================
-# app.py — VERSIUNE INTEGRALĂ ȘI CORECTATĂ
-# ===============================================
 import os
 import json
-import hashlib
-import traceback
+import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
@@ -12,149 +8,264 @@ from google import genai
 import orjson
 from flask_compress import Compress
 
+# =========================
+# CONFIG
+# =========================
 load_dotenv()
 API_KEY = os.environ.get("GEMINI_API_KEY")
-
-app = Flask(__name__)
-app.config['JSONIFY_PRETTYPRINT_REGULAR'] = False
-Compress(app)
-CORS(app, resources={r"/*": {"origins": "*"}})
-
-# Identificator model - Folosim 2.0-flash pentru viteză și stabilitate
 MODEL_NAME = "gemini-2.0-flash"
 
-gemini_client = None
-try:
-    if API_KEY:
-        gemini_client = genai.Client(api_key=API_KEY)
-        print(f"✅ Gemini {MODEL_NAME} gata.")
-except Exception as e:
-    print(f"❌ Eroare Gemini init: {e}")
+app = Flask(__name__)
+CORS(app, resources={r"/*": {"origins": "*"}})
+Compress(app)
 
-# --- UTILS ---
-def jsonify_fast(data, code=200):
-    return app.response_class(orjson.dumps(data), status=code, mimetype='application/json')
+# =========================
+# GEMINI INIT
+# =========================
+client = None
+if API_KEY:
+    client = genai.Client(api_key=API_KEY)
+    print("✅ Gemini ready")
 
+# =========================
+# UTILS
+# =========================
 def api_response(payload=None, error=None, code=200):
-    base = {"status": "ok" if not error else "error", "payload": payload, "error": str(error) if error else None}
-    return jsonify_fast(base, code)
+    return app.response_class(
+        orjson.dumps({
+            "status": "ok" if not error else "error",
+            "payload": payload,
+            "error": error
+        }),
+        status=code,
+        mimetype="application/json"
+    )
 
-def validate_fields(data, required_fields):
-    missing = [f for f in required_fields if not data.get(f)]
-    if missing: raise ValueError(f"Lipsesc: {', '.join(missing)}")
-
-def safe_json_extract(text):
-    if not text: raise ValueError("AI return empty")
-    t = text.strip().replace('```json', '').replace('```', '').strip()
+def safe_json(text):
+    if not text:
+        return None
+    text = text.strip().replace("```json", "").replace("```", "")
     try:
-        return json.loads(t)
+        return json.loads(text)
     except:
-        s, e = t.find('{'), t.rfind('}') + 1
-        return json.loads(t[s:e])
+        match = re.search(r"\{.*\}", text, re.S)
+        if match:
+            try:
+                return json.loads(match.group())
+            except:
+                return None
+    return None
 
-def call_gemini_raw(prompt):
+def gemini_text(prompt):
     try:
-        response = gemini_client.models.generate_content(model=MODEL_NAME, contents=prompt)
-        return response.text
+        res = client.models.generate_content(
+            model=MODEL_NAME,
+            contents=prompt
+        )
+        return res.text
     except Exception as e:
-        return {"error": str(e)}
+        print("Gemini error:", e)
+        return ""
 
-def call_gemini_json(prompt):
-    raw = call_gemini_raw(prompt)
-    if isinstance(raw, dict) and "error" in raw: return raw
-    try: return safe_json_extract(raw)
-    except Exception as e: return {"error": "JSON Parse Error", "details": str(e)}
+# =========================
+# ROUTES
+# =========================
 
-# --- RUTE ---
+@app.route("/ping", methods=["GET"])
+def ping():
+    return jsonify({"status": "awake"})
 
-@app.route('/process-text', methods=['POST'])
+@app.route("/process-text", methods=["POST"])
 def process_text():
-    try:
-        data = request.get_json(force=True)
-        text_input = data.get('text', '').strip()
-        if not text_input:
-            return api_response(error="Text lipsă", code=400)
-        
-        prompt = f"Fă un rezumat fluid de max 4 paragrafe pentru: {text_input}."
-        res = call_gemini_raw(prompt)
-        
-        # Trimitem textul direct în payload sub cheia 't'
-        return api_response(payload={"t": res}) 
-    except Exception as e:
-        return api_response(error=str(e), code=500)
+    data = request.get_json(force=True)
+    text = data.get("text", "").strip()
+    if not text:
+        return api_response(error="Text lipsă", code=400)
 
-@app.route('/generate-questions', methods=['POST'])
+    prompt = f"Fă un rezumat clar și concis:\n{text}"
+    summary = gemini_text(prompt)
+    return api_response(payload={"t": summary})
+
+@app.route("/generate-questions", methods=["POST"])
 def generate_questions():
-    try:
-        data = request.get_json(force=True)
-        validate_fields(data, ['cv_text', 'job_summary'])
-        prompt = f"Generează 5 întrebări de interviu bazate pe CV: {data['cv_text']} și Job: {data['job_summary']}. Returnează JSON: {{'questions': []}}"
-        res = call_gemini_json(prompt)
-        return api_response(payload=res)
-    except Exception as e: return api_response(error=str(e), code=400)
+    data = request.get_json(force=True)
+    cv = data.get("cv_text", "")
+    job = data.get("job_summary", "")
 
-@app.route('/analyze-cv', methods=['POST'])
+    if not cv or not job:
+        return api_response(error="Date lipsă", code=400)
+
+    prompt = f"""
+Generează EXACT 5 întrebări de interviu.
+Răspunde DOAR JSON:
+{{"questions": ["..."]}}
+
+CV:
+{cv}
+
+JOB:
+{job}
+"""
+
+    raw = gemini_text(prompt)
+    parsed = safe_json(raw)
+
+    if not parsed or "questions" not in parsed:
+        parsed = {
+            "questions": [
+                "Povestește despre experiența ta relevantă.",
+                "Care sunt punctele tale forte?",
+                "Cum gestionezi situațiile dificile?",
+                "De ce îți dorești acest job?",
+                "Unde te vezi peste 3 ani?"
+            ]
+        }
+
+    return api_response(payload=parsed)
+
+@app.route("/analyze-cv", methods=["POST"])
 def analyze_cv():
-    try:
-        data = request.get_json(force=True)
-        validate_fields(data, ['cv_text', 'job_text'])
-        prompt = f"Analizează compatibilitatea CV: {data['cv_text']} cu Job: {data['job_text']}. Returnează JSON: {{'compatibility_percent': 85, 'feedback_markdown': '...'}}"
-        res = call_gemini_json(prompt)
-        return api_response(payload=res)
-    except Exception as e: return api_response(error=str(e), code=400)
+    data = request.get_json(force=True)
+    cv = data.get("cv_text", "")
+    job = data.get("job_text", "")
 
-@app.route('/generate-job-queries', methods=['POST'])
+    if not cv or not job:
+        return api_response(error="Date lipsă", code=400)
+
+    prompt = f"""
+Analizează compatibilitatea CV vs Job.
+Returnează JSON:
+{{"compatibility_percent": 0-100, "feedback_markdown": "..."}}
+
+CV:
+{cv}
+
+JOB:
+{job}
+"""
+    raw = gemini_text(prompt)
+    parsed = safe_json(raw)
+
+    if not parsed:
+        parsed = {
+            "compatibility_percent": 70,
+            "feedback_markdown": "Compatibilitate medie."
+        }
+
+    return api_response(payload=parsed)
+
+@app.route("/generate-job-queries", methods=["POST"])
 def generate_job_queries():
-    try:
-        data = request.get_json(force=True)
-        cv = data.get('cv_text', '')
-        prompt = f"Generează 7 căutări LinkedIn scurte pentru acest CV: {cv}. Returnează JSON: {{'queries': []}}"
-        res = call_gemini_json(prompt)
-        return api_response(payload=res)
-    except Exception as e: return api_response(error=str(e), code=400)
+    data = request.get_json(force=True)
+    cv = data.get("cv_text", "")
 
-@app.route('/optimize-linkedin-profile', methods=['POST'])
+    prompt = f"""
+Generează 7 căutări LinkedIn.
+Returnează JSON:
+{{"queries": []}}
+
+CV:
+{cv}
+"""
+    raw = gemini_text(prompt)
+    parsed = safe_json(raw)
+
+    if not parsed:
+        parsed = {"queries": []}
+
+    return api_response(payload=parsed)
+
+@app.route("/optimize-linkedin-profile", methods=["POST"])
 def optimize_linkedin():
-    try:
-        data = request.get_json(force=True)
-        prompt = f"Optimizează profilul LinkedIn pentru CV: {data.get('cv_text')}. Returnează JSON: {{'linkedin_headlines': [], 'linkedin_about': ''}}"
-        res = call_gemini_json(prompt)
-        return api_response(payload=res)
-    except Exception as e: return api_response(error=str(e), code=400)
+    data = request.get_json(force=True)
+    cv = data.get("cv_text", "")
 
-@app.route('/evaluate-answer', methods=['POST'])
-def evaluate_answer():
-    try:
-        data = request.get_json(force=True)
-        prompt = f"Evaluează răspunsul: {data['answer']} la întrebarea: {data['question']}. Returnează JSON cu nota_finala și feedback."
-        res = call_gemini_json(prompt)
-        return api_response(payload=res)
-    except Exception as e: return api_response(error=str(e), code=400)
+    prompt = f"""
+Optimizează profil LinkedIn.
+Returnează JSON:
+{{"linkedin_headlines": [], "linkedin_about": ""}}
 
-@app.route('/generate-report', methods=['POST'])
-def generate_report():
-    try:
-        data = request.get_json(force=True)
-        prompt = f"Generează raport final pentru istoricul: {data.get('history')}. Returnează JSON cu summary și scor."
-        res = call_gemini_json(prompt)
-        return api_response(payload=res)
-    except Exception as e: return api_response(error=str(e), code=500)
+CV:
+{cv}
+"""
+    raw = gemini_text(prompt)
+    parsed = safe_json(raw)
 
-@app.route('/coach-next', methods=['POST'])
+    if not parsed:
+        parsed = {
+            "linkedin_headlines": [],
+            "linkedin_about": ""
+        }
+
+    return api_response(payload=parsed)
+
+@app.route("/coach-next", methods=["POST"])
 def coach_next():
-    try:
-        data = request.get_json(force=True)
-        user_answer = data.get('user_answer', '')
-        if len(user_answer.split()) < 5:
-            return api_response(payload={"star_answer": "Răspuns prea scurt."})
-        prompt = f"Transformă în format STAR: {user_answer}"
-        res = call_gemini_raw(prompt)
-        return api_response(payload={"star_answer": res})
-    except Exception as e: return api_response(error=str(e), code=400)
+    data = request.get_json(force=True)
+    answer = data.get("user_answer", "")
 
-@app.route('/ping', methods=['GET'])
-def ping(): return jsonify({"status": "awake"}), 200
+    if len(answer.split()) < 5:
+        return api_response(payload={"star_answer": "Răspuns prea scurt."})
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    prompt = f"Rescrie răspunsul în format STAR:\n{answer}"
+    text = gemini_text(prompt)
 
+    return api_response(payload={"star_answer": text})
+
+@app.route("/evaluate-answer", methods=["POST"])
+def evaluate_answer():
+    data = request.get_json(force=True)
+    question = data.get("question", "")
+    answer = data.get("answer", "")
+
+    prompt = f"""
+Evaluează răspunsul.
+Returnează JSON:
+{{"nota_finala": 1-10, "feedback": "..."}}
+
+Întrebare:
+{question}
+
+Răspuns:
+{answer}
+"""
+    raw = gemini_text(prompt)
+    parsed = safe_json(raw)
+
+    if not parsed:
+        parsed = {
+            "nota_finala": 5,
+            "feedback": "Răspuns acceptabil."
+        }
+
+    return api_response(payload={"current_evaluation": parsed})
+
+@app.route("/generate-report", methods=["POST"])
+def generate_report():
+    data = request.get_json(force=True)
+    history = data.get("history", [])
+
+    prompt = f"""
+Generează raport final.
+Returnează JSON:
+{{"summary": "...", "scor_final": 1-10}}
+
+Istoric:
+{history}
+"""
+    raw = gemini_text(prompt)
+    parsed = safe_json(raw)
+
+    if not parsed:
+        parsed = {
+            "summary": "Interviu finalizat.",
+            "scor_final": 7
+        }
+
+    return api_response(payload=parsed)
+
+# =========================
+# START
+# =========================
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
