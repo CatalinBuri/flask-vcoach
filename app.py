@@ -227,8 +227,9 @@ def analyze_cv():
     """
     Analizează compatibilitatea unui CV cu descrierea jobului.
     - Curăță textul (clean_text)
-    - Împarte textul lung în chunks dacă e necesar
-    - Returnează JSON cu scor și feedback, text fluent și corect gramatical
+    - Împarte textul lung în chunk-uri dacă e necesar
+    - Generează scor și feedback pentru fiecare chunk
+    - Reunește și rescrie feedback-ul într-un text coerent, fluent, corect gramatical
     """
     try:
         data = request.get_json(force=True)
@@ -253,40 +254,70 @@ def analyze_cv():
         job_chunks = chunk_text(job_clean, chunk_size=3000)
 
         # =========================
-        # COMBINARE CHUNK-URI (zip_longest pentru a nu pierde nimic)
+        # FEEDBACK PER CHUNK
         # =========================
-        combined_prompt_text = ""
-        for cv_chunk, job_chunk in zip_longest(cv_chunks, job_chunks, fillvalue=""):
-            combined_prompt_text += f"CV:\n{cv_chunk}\n\nJob:\n{job_chunk}\n\n"
+        chunk_feedbacks = []
+        chunk_scores = []
 
-        # =========================
-        # CERERE LA MODEL
-        # =========================
-        model_prompt = f"""
-Ești un recrutor profesionist hibrid. Analizează compatibilitatea dintre CV și cerințele postului.
-Oferă procentaj realist (0-100) și feedback detaliat, profesional și motivant, scris fluent și corect gramatical în română.
-Returnează NUMAI JSON valid, fără text suplimentar:
-{{"compatibility_percent": număr_întreg, "feedback_markdown": "text curat, fluent și profesionist"}}
+        for i, (cv_chunk, job_chunk) in enumerate(zip(cv_chunks, job_chunks)):
+            prompt_chunk = f"""
+Ești un recrutor profesionist cu experiență umană + AI. 
+Analizează compatibilitatea dintre CV și cerințele postului. 
+Oferă procentaj realist (0-100) și feedback detaliat pentru acest fragment.
 
-{combined_prompt_text}
+Returnează NUMAI JSON valid:
+{{"compatibility_percent": număr_întreg, "feedback_markdown": "text curat și profesionist"}}
+
+CV fragment:
+{cv_chunk}
+
+Job fragment:
+{job_chunk}
 """
+            raw_chunk = gemini_text(prompt_chunk)
+            parsed_chunk = safe_json(raw_chunk)
 
-        raw = gemini_text(model_prompt)
-        print("DEBUG /analyze-cv - Raw AI response:", raw)
+            # fallback dacă AI nu răspunde corect
+            if not parsed_chunk or "compatibility_percent" not in parsed_chunk or "feedback_markdown" not in parsed_chunk:
+                parsed_chunk = {
+                    "compatibility_percent": 70,
+                    "feedback_markdown": "Fragmentul CV-ului are relevanță parțială pentru cerințele acestui segment al jobului."
+                }
 
-        parsed = safe_json(raw)
-        if not parsed or "compatibility_percent" not in parsed or "feedback_markdown" not in parsed:
-            print("DEBUG /analyze-cv - Fallback JSON")
-            parsed = {
-                "compatibility_percent": 75,
-                "feedback_markdown": (
-                    "CV-ul prezintă o aliniere bună cu cerințele postului. "
-                    "Se recomandă evidențierea mai clară a rezultatelor cuantificabile și a proiectelor relevante, "
-                    "precum și o prezentare coerentă și fluentă a experienței."
-                )
-            }
+            chunk_feedbacks.append(parsed_chunk["feedback_markdown"])
+            chunk_scores.append(parsed_chunk["compatibility_percent"])
 
-        return api_response(payload=parsed)
+        # =========================
+        # COMBINĂ ȘI RESCRIE FLUENT
+        # =========================
+        combined_feedback = "\n\n".join(chunk_feedbacks)
+
+        final_prompt = f"""
+Ai primit mai multe feedback-uri parțiale despre compatibilitatea unui CV cu descrierea unui job.
+Rescrie-le într-un text **profesionist, fluent și corect gramatical**, în română, fără erori, fără propoziții tăiate sau fără diacritice lipsă.
+Text combinat din AI:
+{combined_feedback}
+Returnează NUMAI text curat, profesional și coerent.
+"""
+        res_final = gemini_text(final_prompt)
+        # fallback dacă rescrierea eșuează
+        if not res_final.strip():
+            res_final = combined_feedback  # măcar combinarea brută
+
+        # =========================
+        # SCOR FINAL MEDIU
+        # =========================
+        if chunk_scores:
+            final_score = int(sum(chunk_scores) / len(chunk_scores))
+        else:
+            final_score = 75
+
+        payload = {
+            "compatibility_percent": final_score,
+            "feedback_markdown": res_final
+        }
+
+        return api_response(payload=payload)
 
     except Exception as e:
         print("ERROR /analyze-cv:", str(e))
@@ -461,6 +492,7 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
