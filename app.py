@@ -104,7 +104,7 @@ def call_gemini_raw(prompt):
         return {"error": "Eroare configurare server", "details": "Client AI neinițializat."}
     try:
         response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-2.5-flash",
             contents=prompt
         )
         return response.text
@@ -404,6 +404,7 @@ if __name__ == '__main__':
     # Pentru producție: folosește gunicorn
     # app.run(host='0.0.0.0', port=5000, debug=False)
     pass
+
 
 
 
