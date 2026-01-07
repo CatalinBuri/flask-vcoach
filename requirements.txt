@@ -5,3 +5,4 @@ google-genai
 gunicorn
 orjson
 flask_compress
+groq
