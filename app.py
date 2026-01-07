@@ -4,7 +4,7 @@ import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
 import orjson
 from flask_compress import Compress
 from groq import Groq
@@ -360,3 +360,4 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
