@@ -91,9 +91,9 @@ def api_response(payload=None, error=None, code=200):
     )
 
 def clean_text(text: str) -> str:
-    """Curăță textul eliminând spații multiple și caractere non-ASCII."""
-    text = re.sub(r'\s+', ' ', text)
-    text = re.sub(r'[^\x00-\x7F]+', '', text)
+    """Curăță textul eliminând spații multiple și caractere de control, păstrând diacritice."""
+    text = re.sub(r'\s+', ' ', text)           # spații multiple → 1 spațiu
+    text = re.sub(r'[\x00-\x1F]+', '', text)   # caractere de control
     return text.strip()
 
 def chunk_text(text: str, chunk_size: int = 2000) -> list:
@@ -492,6 +492,7 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
