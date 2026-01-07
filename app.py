@@ -309,7 +309,7 @@ Returnează NUMAI JSON valid:
         # OPTIONAL: POLISH FINAL (dacă vrei să refacem textul după chunking)
         # =========================
         final_prompt = f"""
-        Re-formulează următorul feedback într-un text fluent, corect gramatical și cu diacritice:
+        Reformulează următorul feedback într-un text fluent si profesional, corect din punct de vedere gramatical si al acordurilor de gen și persoana; folosește diacritice:
         {parsed['feedback_markdown']}
         """
         parsed['feedback_markdown'] = gemini_text(final_prompt) or parsed['feedback_markdown']
@@ -341,7 +341,7 @@ def generate_job_queries():
         # Promptul AI
         model_prompt = f"""
 Ești un expert în LinkedIn Job Search și recrutare. Pe baza CV-ului următor, generează **exact 7 interogări de job**, 
-fiecare având **un singur item de căutare** (skill, rol, tool sau competență). Nu folosi OR sau combinații multiple.
+fiecare având **un singur item de căutare** (rol sau denumire job conforma cu experienta descrisa in cv). Nu folosi OR sau combinații multiple.
 Răspunde NUMAI cu JSON valid:
 {{"queries": ["query1", "query2", "query3", "query4", "query5", "query6", "query7"]}}
 
@@ -489,4 +489,5 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
