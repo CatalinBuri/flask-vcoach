@@ -255,7 +255,6 @@ def generate_job_queries():
         if not cv:
             return api_response(error="CV lipsă", code=400)
 
-        # Prompt pentru Groq
         prompt = f"""
 Ești un expert LinkedIn Job Search cu cunoștințe actualizate 2026 despre algoritmul de căutare și nomenclatura reală folosită în anunțurile de joburi internaționale și din România.
 
@@ -266,36 +265,75 @@ Sarcina ta: analizează EXCLUSIV CV-ul furnizat și extrage:
 - domenii / industrii în care a lucrat
 - certificări (dacă există)
 
-Pe baza acestor elemente generează **exact 7 căutări eficiente pentru LinkedIn Jobs** care să returneze oportunități cât mai potrivite profilului.
+Pe baza acestor elemente generează **exact 7 căutări eficiente pentru LinkedIn Jobs**.
 
 Reguli obligatorii:
-1. Folosește **nomenclatura standard internațională** (engleză) pentru titluri de job.
-2. Include combinații de **skills + tool-uri + nivel** (Junior / Mid / Senior / Lead) unde apare în CV.
-3. Folosește **Boolean simplu** unde ajută: "exact phrase", OR pentru sinonime, - pentru a exclude.
-4. Majoritatea căutărilor să fie în **engleză**.
-5. Fiecare căutare să fie realistă și să returneze rezultate relevante.
-6. Returnează **NUMAI JSON valid** fără text suplimentar.
+- Folosește titluri internaționale (engleză)
+- Include combinații skills + tool-uri + nivel (Junior/Mid/Senior/Lead)
+- Boolean simplu: exact phrase, OR, - pentru excluderi
+- Majoritatea căutărilor să fie în engleză
+- Returnează NUMAI JSON valid, fără text suplimentar
+
+Format JSON așteptat:
+{{
+  "queries": [
+    "căutare 1 completă",
+    "căutare 2 completă",
+    "căutare 3 completă",
+    "căutare 4 completă",
+    "căutare 5 completă",
+    "căutare 6 completă",
+    "căutare 7 completă"
+  ]
+}}
 
 CV:
 {cv}
 """
 
-        # Folosim Groq dacă e disponibil, altfel Gemini
-        raw = groq_text(prompt)
-        if not raw:
+        # =========================
+        # Apel Groq
+        # =========================
+        raw = ""
+        if USE_GROQ and groq_client:
+            raw = groq_text(prompt)
+            print("DEBUG: raw Groq response:", raw)
+            if not raw:
+                print("DEBUG: Groq nu a răspuns, fallback la Gemini...")
+
+        # =========================
+        # Fallback Gemini
+        # =========================
+        if not raw and gemini_client:
             raw = gemini_text(prompt)
+            print("DEBUG: raw Gemini response:", raw)
 
+        # =========================
+        # Parsare JSON
+        # =========================
         parsed = safe_json(raw)
+        print("DEBUG: parsed JSON:", parsed)
 
-        # Dacă parsing-ul eșuează sau nu avem "queries", returnăm 503
+        # =========================
+        # Dacă parsing-ul eșuează
+        # =========================
         if not parsed or "queries" not in parsed:
-            return api_response(error="AI ocupat, încercați din nou", code=503)
+            return api_response(
+                error="AI nu a putut genera JSON valid",
+                code=503,
+            )
 
+        # =========================
+        # Return JSON valid
+        # =========================
         return api_response(payload=parsed)
 
     except Exception as e:
         print("ERROR /generate-job-queries:", str(e))
-        return api_response(error="AI ocupat, încercați din nou", code=503)
+        return api_response(
+            error=f"Excepție la server: {str(e)}",
+            code=503
+        )
 
 
 @app.route("/optimize-linkedin-profile", methods=["POST"])
@@ -407,6 +445,7 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
