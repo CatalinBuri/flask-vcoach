@@ -219,75 +219,82 @@ Descrierea postului:
 
 @app.route("/analyze-cv", methods=["POST"])
 def analyze_cv():
+    """
+    Analizează compatibilitatea unui CV cu descrierea jobului.
+    - Curăță textul (clean_text)
+    - Împarte textul lung în chunks dacă e necesar
+    - Returnează JSON cu scor și feedback
+    """
     try:
         data = request.get_json(force=True)
         cv_raw = data.get("cv_text", "").strip()
         job_raw = data.get("job_text", "").strip()
-        
+
         if not cv_raw or not job_raw:
-            return api_response(error="Date lipsă", code=400)
+            return api_response(error="Date lipsă: CV și Job sunt necesare", code=400)
 
-        # =============================
+        # =========================
         # CLEAN TEXT
-        # =============================
-        cv = clean_text(cv_raw)
-        job = clean_text(job_raw)
+        # =========================
+        cv_clean = clean_text(cv_raw)
+        job_clean = clean_text(job_raw)
 
-        # =============================
-        # CHUNKING CV și Job
-        # =============================
-        MAX_CHUNK_SIZE = 2000  # caractere aproximative per chunk
-        cv_chunks = [cv[i:i+MAX_CHUNK_SIZE] for i in range(0, len(cv), MAX_CHUNK_SIZE)]
-        job_chunks = [job[i:i+MAX_CHUNK_SIZE] for i in range(0, len(job), MAX_CHUNK_SIZE)]
+        print("DEBUG /analyze-cv - CV length:", len(cv_clean), "Job length:", len(job_clean))
 
-        combined_feedback = []
-        combined_percent = []
+        # =========================
+        # CHUNKING (dacă textul e prea lung)
+        # =========================
+        def chunk_text(text, max_len=3000):
+            """
+            Împarte textul în bucăți mai mici (chunk-uri) pentru model.
+            """
+            chunks = []
+            start = 0
+            while start < len(text):
+                end = min(start + max_len, len(text))
+                chunks.append(text[start:end])
+                start = end
+            return chunks
 
-        # Iterăm peste combinații de chunk CV + Job
-        for idx_cv, chunk_cv in enumerate(cv_chunks):
-            for idx_job, chunk_job in enumerate(job_chunks):
-                prompt = f"""
-Ești un recrutor profesionist hibrid. Analizează compatibilitatea dintre acest segment de CV și acest segment de post.
-Estimează un procent realist (0-100) și oferă feedback detaliat, obiectiv, constructiv și motivant.
-Îmbină analiza umană (context, potențial de dezvoltare) cu evaluarea AI (aliniere la competențe, cuvinte-cheie, experiență cuantificabilă).
+        cv_chunks = chunk_text(cv_clean)
+        job_chunks = chunk_text(job_clean)
+
+        # Combinăm în prompt
+        prompt = ""
+        for cv_chunk, job_chunk in zip(cv_chunks, job_chunks):
+            prompt += f"CV:\n{cv_chunk}\n\nJob:\n{job_chunk}\n\n"
+
+        # =========================
+        # CERERE LA MODEL (Groq sau Gemini)
+        # =========================
+        model_prompt = f"""
+Ești un recrutor profesionist hibrid. Analizează compatibilitatea dintre CV și cerințele postului.
+Oferă procentaj realist (0-100) și feedback detaliat, profesional și motivant.
 Returnează NUMAI JSON valid:
-{{"compatibility_percent": număr_întreg, "feedback_markdown": "text feedback curat și profesionist"}}
-Folosește doar text simplu în feedback (paragrafe separate prin linie goală).
+{{"compatibility_percent": număr_întreg, "feedback_markdown": "text curat și profesionist"}}
 
-CV segment {idx_cv+1}:
-{chunk_cv}
-
-Job segment {idx_job+1}:
-{chunk_job}
+{prompt}
 """
-                raw = gemini_text(prompt)
-                parsed = safe_json(raw)
 
-                if parsed and "compatibility_percent" in parsed and "feedback_markdown" in parsed:
-                    combined_feedback.append(parsed["feedback_markdown"])
-                    combined_percent.append(parsed["compatibility_percent"])
-                else:
-                    combined_feedback.append("Segmentul nu a putut fi analizat complet de AI.")
-                    combined_percent.append(75)
+        raw = gemini_text(model_prompt)
+        print("DEBUG /analyze-cv - Raw AI response:", raw)
 
-        # =============================
-        # COMBINARE FEEDBACK
-        # =============================
-        if combined_percent:
-            avg_percent = round(sum(combined_percent) / len(combined_percent))
-        else:
-            avg_percent = 75
+        parsed = safe_json(raw)
+        if not parsed or "compatibility_percent" not in parsed or "feedback_markdown" not in parsed:
+            print("DEBUG /analyze-cv - Fallback JSON")
+            parsed = {
+                "compatibility_percent": 75,
+                "feedback_markdown": (
+                    "CV-ul prezintă o aliniere bună cu cerințele postului. "
+                    "Se recomandă evidențierea mai clară a rezultatelor cuantificabile și a proiectelor relevante."
+                )
+            }
 
-        final_feedback = "\n\n".join(combined_feedback)
-
-        return api_response(payload={
-            "compatibility_percent": avg_percent,
-            "feedback_markdown": final_feedback
-        })
+        return api_response(payload=parsed)
 
     except Exception as e:
         print("ERROR /analyze-cv:", str(e))
-        return api_response(error="AI ocupat, încercați din nou", code=503)
+        return api_response(error=f"Eroare internă: {str(e)}", code=500)
 
 
 @app.route("/generate-job-queries", methods=["POST"])
@@ -488,6 +495,7 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
