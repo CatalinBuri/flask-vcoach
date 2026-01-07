@@ -219,32 +219,71 @@ Descrierea postului:
 
 @app.route("/analyze-cv", methods=["POST"])
 def analyze_cv():
-    data = request.get_json(force=True)
-    cv = data.get("cv_text", "").strip()
-    job = data.get("job_text", "").strip()
-    if not cv or not job:
-        return api_response(error="Date lipsă", code=400)
-    
-    prompt = f"""
-Ești un recrutor profesionist hibrid. Analizează compatibilitatea dintre CV și cerințele postului.
+    try:
+        data = request.get_json(force=True)
+        cv_raw = data.get("cv_text", "").strip()
+        job_raw = data.get("job_text", "").strip()
+        
+        if not cv_raw or not job_raw:
+            return api_response(error="Date lipsă", code=400)
+
+        # =============================
+        # CLEAN TEXT
+        # =============================
+        cv = clean_text(cv_raw)
+        job = clean_text(job_raw)
+
+        # =============================
+        # CHUNKING CV-ul
+        # =============================
+        MAX_CHUNK_SIZE = 2000  # caractere aproximative per chunk
+        cv_chunks = [cv[i:i+MAX_CHUNK_SIZE] for i in range(0, len(cv), MAX_CHUNK_SIZE)]
+
+        combined_feedback = []
+        combined_percent = []
+
+        for idx, chunk in enumerate(cv_chunks):
+            prompt = f"""
+Ești un recrutor profesionist hibrid. Analizează compatibilitatea dintre acest segment de CV și cerințele postului.
 Estimează un procent realist (0-100) și oferă feedback detaliat, obiectiv, constructiv și motivant.
 Îmbină analiza umană (context, potențial de dezvoltare) cu evaluarea AI (aliniere la competențe, cuvinte-cheie, experiență cuantificabilă).
 Returnează NUMAI JSON valid:
 {{"compatibility_percent": număr_întreg, "feedback_markdown": "text feedback curat și profesionist"}}
 Folosește doar text simplu în feedback (paragrafe separate prin linie goală).
-CV:
-{cv}
+CV segment {idx+1}:
+{chunk}
 Post:
 {job}
 """
-    raw = gemini_text(prompt)
-    parsed = safe_json(raw)
-    if not parsed or "compatibility_percent" not in parsed:
-        parsed = {
-            "compatibility_percent": 75,
-            "feedback_markdown": "CV-ul prezintă o aliniere bună cu cerințele postului, în special în ceea ce privește experiența tehnică. Recomandăm accentuarea rezultatelor cuantificabile și a proiectelor relevante pentru a crește impactul asupra recrutorilor."
-        }
-    return api_response(payload=parsed)
+            raw = gemini_text(prompt)
+            parsed = safe_json(raw)
+
+            if parsed and "compatibility_percent" in parsed and "feedback_markdown" in parsed:
+                combined_feedback.append(parsed["feedback_markdown"])
+                combined_percent.append(parsed["compatibility_percent"])
+            else:
+                # fallback pentru chunk
+                combined_feedback.append("Segmentul nu a putut fi analizat complet de AI.")
+                combined_percent.append(75)
+
+        # =============================
+        # COMBINARE FEEDBACK
+        # =============================
+        if combined_percent:
+            avg_percent = round(sum(combined_percent) / len(combined_percent))
+        else:
+            avg_percent = 75
+
+        final_feedback = "\n\n".join(combined_feedback)
+
+        return api_response(payload={
+            "compatibility_percent": avg_percent,
+            "feedback_markdown": final_feedback
+        })
+
+    except Exception as e:
+        print("ERROR /analyze-cv:", str(e))
+        return api_response(error="AI ocupat, încercați din nou", code=503)
 
 
 @app.route("/generate-job-queries", methods=["POST"])
@@ -445,6 +484,7 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
