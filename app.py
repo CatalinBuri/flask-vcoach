@@ -328,61 +328,106 @@ Returnează NUMAI text curat, profesional și coerent.
 @app.route("/generate-job-queries", methods=["POST"])
 def generate_job_queries():
     """
-    Generează 7 interogări de job, câte un item de căutare pentru fiecare,
-    folosind modelul AI (Gemini/Groq).
-    Fiecare query trebuie să fie un singur item de căutare, fără OR sau splituri multiple.
+    Generează exact 7 căutări de joburi compatibile cu profilul candidatului.
+    - FĂRĂ OR
+    - FIECARE query = un singur titlu / rol
+    - Dacă CV-ul este prea nișat / ambiguu → mesaj clar, fără rezultate false
     """
     try:
         data = request.get_json(force=True)
         cv_raw = data.get("cv_text", "").strip()
+
         if not cv_raw:
             return api_response(error="CV lipsă", code=400)
 
         cv_clean = clean_text(cv_raw)
-        cv_chunks = chunk_text(cv_clean)  # chunking dacă e text lung
 
-        # Promptul AI
-        model_prompt = f"""
-Ești un expert în LinkedIn Job Search și recrutare. Pe baza CV-ului următor, generează **exact 7 interogări de job**, 
-fiecare având **un singur item de căutare** (roluri sau denumiri de joburi compatibile cu experienta descrisa in cv). Nu folosi OR sau combinații multiple.
-Răspunde NUMAI cu JSON valid:
-{{"queries": ["query1", "query2", "query3", "query4", "query5", "query6", "query7"]}}
+        prompt = f"""
+Ești un expert senior în recrutare și LinkedIn Job Search (2026).
+
+Analizează EXCLUSIV CV-ul de mai jos și stabilește dacă experiența candidatului
+poate fi asociată CLAR cu roluri standard existente pe platforme de joburi
+(LinkedIn, Indeed, Glassdoor).
+
+REGULI CRITICE:
+- NU inventa roluri
+- NU forța potriviri
+- NU oferi alternative dacă nu există o asociere clară
+- NU folosi OR, paranteze sau combinații
+- FIECARE căutare trebuie să conțină UN SINGUR titlu de job standard (engleză)
+
+Dacă NU poți identifica MINIM 3 roluri clare și realiste,
+returnează EXACT acest JSON și NIMIC altceva:
+
+{{"status": "no_clear_match", "message": "Experiența candidatului este prea nișată sau formulată într-un mod care nu permite asocierea clară cu roluri standard de pe platformele de joburi."}}
+
+Dacă POȚI identifica roluri clare, returnează EXACT 7 căutări:
+
+{{"queries": [
+  "Job Title 1",
+  "Job Title 2",
+  "Job Title 3",
+  "Job Title 4",
+  "Job Title 5",
+  "Job Title 6",
+  "Job Title 7"
+]}}
 
 CV:
 {cv_clean}
 """
 
         # =========================
-        # Apel Groq
+        # Apel Groq (prioritar)
         # =========================
         raw = ""
         if USE_GROQ and groq_client:
-            raw = groq_text(model_prompt)
+            raw = groq_text(prompt)
             print("DEBUG /generate-job-queries - raw Groq response:", raw)
-            if not raw:
-                print("DEBUG /generate-job-queries - fallback la Gemini...")
 
+        # =========================
+        # Fallback Gemini
+        # =========================
         if not raw and gemini_client:
-            raw = gemini_text(model_prompt)
+            raw = gemini_text(prompt)
             print("DEBUG /generate-job-queries - raw Gemini response:", raw)
 
         parsed = safe_json(raw)
-        if not parsed or "queries" not in parsed or not isinstance(parsed["queries"], list) or len(parsed["queries"]) != 7:
-            # fallback simplu: extragem primele 7 cuvinte din CV
-            words = re.findall(r'\b[A-Z][a-zA-Z0-9\+\#&]+\b', cv_clean)
-            queries = words[:7] if len(words) >= 7 else words + ["ExtraSkill"]*(7-len(words))
-            parsed = {"queries": queries}
+        print("DEBUG /generate-job-queries - parsed:", parsed)
 
-        return api_response(payload=parsed)
+        # =========================
+        # Caz: NU există potrivire clară
+        # =========================
+        if parsed and parsed.get("status") == "no_clear_match":
+            return api_response(payload=parsed)
+
+        # =========================
+        # Validare strictă rezultate
+        # =========================
+        if (
+            not parsed
+            or "queries" not in parsed
+            or not isinstance(parsed["queries"], list)
+            or len(parsed["queries"]) != 7
+        ):
+            return api_response(
+                payload={
+                    "status": "no_clear_match",
+                    "message": (
+                        "Experiența candidatului este prea nișată sau formulată într-un mod "
+                        "care nu permite asocierea clară cu roluri standard de pe platformele de joburi."
+                    )
+                }
+            )
+
+        return api_response(payload={"queries": parsed["queries"]})
 
     except Exception as e:
         print("ERROR /generate-job-queries:", str(e))
-        return api_response(error=f"Excepție la server: {str(e)}", code=503)
-
-
-# =========================
-# Restul route-urilor rămân nemodificate
-# =========================
+        return api_response(
+            error=f"Eroare internă server: {str(e)}",
+            code=503
+        )
 
 @app.route("/optimize-linkedin-profile", methods=["POST"])
 def optimize_linkedin():
@@ -492,6 +537,7 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
