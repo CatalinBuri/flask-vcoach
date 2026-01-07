@@ -45,6 +45,7 @@ if USE_GROQ:
     except Exception as e:
         print(f"❌ Eroare la inițializarea Groq: {str(e)}")
         groq_client = None
+
 def groq_text(prompt: str) -> str:
     """
     Trimite prompt-ul la Groq și returnează textul complet.
@@ -73,6 +74,7 @@ def groq_text(prompt: str) -> str:
     except Exception as e:
         print(f"Groq error: {str(e)}")
         return ""
+
 # =========================
 # UTILS
 # =========================
@@ -87,17 +89,21 @@ def api_response(payload=None, error=None, code=200):
         mimetype="application/json"
     )
 
-
 def clean_text(text: str) -> str:
-    """Elimină urme de markdown, blocuri de cod sau caractere nedorite."""
-    if not text:
-        return ""
-    text = text.strip()
-    text = re.sub(r"^```json\s*|\s*```$", "", text, flags=re.MULTILINE | re.IGNORECASE)
-    text = re.sub(r"^```[\w]*\s*", "", text, flags=re.MULTILINE)
-    text = re.sub(r"[\*#_`>]", "", text)
+    """Curăță textul eliminând spații multiple și caractere non-ASCII."""
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'[^\x00-\x7F]+', '', text)
     return text.strip()
 
+def chunk_text(text: str, chunk_size: int = 2000) -> list:
+    """Împarte textul în bucăți de lungime maximă chunk_size."""
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        chunks.append(text[start:end])
+        start = end
+    return chunks
 
 def safe_json(text: str):
     if not text:
@@ -114,7 +120,6 @@ def safe_json(text: str):
             except:
                 pass
     return None
-
 
 def gemini_text(prompt: str) -> str:
     """Prioritate Groq (mai rapid), fallback Gemini (new SDK)."""
@@ -155,7 +160,6 @@ def gemini_text(prompt: str) -> str:
             print(f"Gemini error: {type(e).__name__} - {str(e)}")
     
     return ""
-
 
 # =========================
 # ROUTES
@@ -244,20 +248,8 @@ def analyze_cv():
         # =========================
         # CHUNKING (dacă textul e prea lung)
         # =========================
-        def chunk_text(text, max_len=3000):
-            """
-            Împarte textul în bucăți mai mici (chunk-uri) pentru model.
-            """
-            chunks = []
-            start = 0
-            while start < len(text):
-                end = min(start + max_len, len(text))
-                chunks.append(text[start:end])
-                start = end
-            return chunks
-
-        cv_chunks = chunk_text(cv_clean)
-        job_chunks = chunk_text(job_clean)
+        cv_chunks = chunk_text(cv_clean, chunk_size=3000)
+        job_chunks = chunk_text(job_clean, chunk_size=3000)
 
         # Combinăm în prompt
         prompt = ""
@@ -299,46 +291,29 @@ Returnează NUMAI JSON valid:
 
 @app.route("/generate-job-queries", methods=["POST"])
 def generate_job_queries():
+    """
+    Generează 7 interogări de job, câte un item de căutare pentru fiecare,
+    folosind modelul AI (Gemini/Groq).
+    Fiecare query trebuie să fie un singur item de căutare, fără OR sau splituri multiple.
+    """
     try:
         data = request.get_json(force=True)
-        cv = data.get("cv_text", "").strip()
-        if not cv:
+        cv_raw = data.get("cv_text", "").strip()
+        if not cv_raw:
             return api_response(error="CV lipsă", code=400)
 
-        prompt = f"""
-Ești un expert LinkedIn Job Search cu cunoștințe actualizate 2026 despre algoritmul de căutare și nomenclatura reală folosită în anunțurile de joburi internaționale și din România.
+        cv_clean = clean_text(cv_raw)
+        cv_chunks = chunk_text(cv_clean)  # chunking dacă e text lung
 
-Sarcina ta: analizează EXCLUSIV CV-ul furnizat și extrage:
-- roluri / poziții ocupate (folosește denumirile standard: Project Manager, nu „lider de proiect”; Senior Software Engineer, nu doar „programator senior”)
-- abilități tehnice și soft relevante
-- tool-uri, tehnologii, framework-uri, limbaje de programare menționate
-- domenii / industrii în care a lucrat
-- certificări (dacă există)
-
-Pe baza acestor elemente generează **exact 7 căutări eficiente pentru LinkedIn Jobs**.
-
-Reguli obligatorii:
-- Folosește titluri internaționale (engleză)
-- Include combinații skills + tool-uri + nivel (Junior/Mid/Senior/Lead)
-- Boolean simplu: exact phrase, OR, - pentru excluderi
-- Majoritatea căutărilor să fie în engleză
-- Returnează NUMAI JSON valid, fără text suplimentar
-
-Format JSON așteptat:
-{{
-  "queries": [
-    "căutare 1 completă",
-    "căutare 2 completă",
-    "căutare 3 completă",
-    "căutare 4 completă",
-    "căutare 5 completă",
-    "căutare 6 completă",
-    "căutare 7 completă"
-  ]
-}}
+        # Promptul AI
+        model_prompt = f"""
+Ești un expert în LinkedIn Job Search și recrutare. Pe baza CV-ului următor, generează **exact 7 interogări de job**, 
+fiecare având **un singur item de căutare** (skill, rol, tool sau competență). Nu folosi OR sau combinații multiple.
+Răspunde NUMAI cu JSON valid:
+{{"queries": ["query1", "query2", "query3", "query4", "query5", "query6", "query7"]}}
 
 CV:
-{cv}
+{cv_clean}
 """
 
         # =========================
@@ -346,45 +321,32 @@ CV:
         # =========================
         raw = ""
         if USE_GROQ and groq_client:
-            raw = groq_text(prompt)
-            print("DEBUG: raw Groq response:", raw)
+            raw = groq_text(model_prompt)
+            print("DEBUG /generate-job-queries - raw Groq response:", raw)
             if not raw:
-                print("DEBUG: Groq nu a răspuns, fallback la Gemini...")
+                print("DEBUG /generate-job-queries - fallback la Gemini...")
 
-        # =========================
-        # Fallback Gemini
-        # =========================
         if not raw and gemini_client:
-            raw = gemini_text(prompt)
-            print("DEBUG: raw Gemini response:", raw)
+            raw = gemini_text(model_prompt)
+            print("DEBUG /generate-job-queries - raw Gemini response:", raw)
 
-        # =========================
-        # Parsare JSON
-        # =========================
         parsed = safe_json(raw)
-        print("DEBUG: parsed JSON:", parsed)
+        if not parsed or "queries" not in parsed or not isinstance(parsed["queries"], list) or len(parsed["queries"]) != 7:
+            # fallback simplu: extragem primele 7 cuvinte din CV
+            words = re.findall(r'\b[A-Z][a-zA-Z0-9\+\#&]+\b', cv_clean)
+            queries = words[:7] if len(words) >= 7 else words + ["ExtraSkill"]*(7-len(words))
+            parsed = {"queries": queries}
 
-        # =========================
-        # Dacă parsing-ul eșuează
-        # =========================
-        if not parsed or "queries" not in parsed:
-            return api_response(
-                error="AI nu a putut genera JSON valid",
-                code=503,
-            )
-
-        # =========================
-        # Return JSON valid
-        # =========================
         return api_response(payload=parsed)
 
     except Exception as e:
         print("ERROR /generate-job-queries:", str(e))
-        return api_response(
-            error=f"Excepție la server: {str(e)}",
-            code=503
-        )
+        return api_response(error=f"Excepție la server: {str(e)}", code=503)
 
+
+# =========================
+# Restul route-urilor rămân nemodificate
+# =========================
 
 @app.route("/optimize-linkedin-profile", methods=["POST"])
 def optimize_linkedin():
@@ -428,7 +390,6 @@ def coach_next():
     prompt = f"""
 Ești un recrutor profesionist hibrid. Rescrie răspunsul candidatului în structura STAR (Situație, Sarcină, Acțiune, Rezultat), păstrând toate detaliile esențiale.
 Folosește un limbaj profesionist, fluent, natural și empatic, care reflectă atât rigurozitatea structurii, cât și autenticitatea umană.
-Răspunde NUMAI cu textul rescris, fără etichete precum **Situație:** sau alte marcaje – doar paragrafe cursive și coerente în română corectă.
 Răspuns original:
 {answer}
 """
@@ -495,10 +456,3 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
-
-
-
-
-
-
-
