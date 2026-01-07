@@ -7,14 +7,15 @@ from dotenv import load_dotenv
 from google import genai
 import orjson
 from flask_compress import Compress
-
+from groq import Groq
 # =========================
 # CONFIG
 # =========================
 load_dotenv()
 API_KEY = os.environ.get("GEMINI_API_KEY")
 MODEL_NAME = "gemini-2.0-flash"
-
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+USE_GROQ = bool(GROQ_API_KEY)
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 Compress(app)
@@ -26,7 +27,10 @@ client = None
 if API_KEY:
     client = genai.Client(api_key=API_KEY)
     print("✅ Gemini ready")
-
+groq_client = None
+if USE_GROQ:
+    groq_client = Groq(api_key=GROQ_API_KEY)
+    print("✅ Groq ready (FREE)")
 # =========================
 # UTILS
 # =========================
@@ -57,6 +61,23 @@ def safe_json(text):
     return None
 
 def gemini_text(prompt):
+    # 🔁 Dacă avem Groq → folosim Groq (FREE)
+    if USE_GROQ and groq_client:
+        try:
+            res = groq_client.chat.completions.create(
+                model="llama-3.1-8b-instant",
+                messages=[
+                    {"role": "system", "content": "Răspunde exact conform instrucțiunilor. Dacă se cere JSON, returnează DOAR JSON valid."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+            )
+            return res.choices[0].message.content
+        except Exception as e:
+            print("Groq error:", e)
+            return ""
+
+    # fallback Gemini (dacă Groq nu există)
     try:
         res = client.models.generate_content(
             model=MODEL_NAME,
@@ -269,3 +290,4 @@ Istoric:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000)
+
