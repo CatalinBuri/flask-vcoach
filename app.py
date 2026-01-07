@@ -530,13 +530,98 @@ Istoric interviu:
             "scor_final": 8
         }
     return api_response(payload=parsed)
+@app.route("/rewrite-cv-for-job-boards", methods=["POST"])
+def rewrite_cv_for_job_boards():
+    """
+    Reformulează CV-ul pentru job boards (LinkedIn, Indeed, ATS).
+    - Normalizează titluri
+    - Clarifică senioritatea
+    - Extrage keywords ATS
+    - NU inventează experiență
+    """
+    try:
+        data = request.get_json(force=True)
+        cv_raw = data.get("cv_text", "").strip()
 
+        if not cv_raw:
+            return api_response(error="CV lipsă", code=400)
+
+        cv_clean = clean_text(cv_raw)
+
+        prompt = f"""
+Ești un expert senior în recrutare internațională și sisteme ATS (2026).
+
+Sarcina ta este să REFORMULEZI CV-ul candidatului pentru a fi
+ușor de înțeles, corect interpretat și eficient pe platforme de joburi
+precum LinkedIn Jobs, Indeed, Glassdoor și ATS-uri automate.
+
+REGULI STRICTE:
+- NU inventa experiență
+- NU exagera senioritatea
+- NU adăuga skill-uri care nu apar explicit sau logic în CV
+- Păstrează realitatea profesională a candidatului
+- Tradu titlurile interne / nișate în titluri standard doar dacă există corespondență clară
+- Dacă NU există corespondență, menționează explicit acest lucru
+
+STRUCTURA DE RĂSPUNS (JSON strict):
+
+{{
+  "normalized_titles": [
+    "Titlu standard 1",
+    "Titlu standard 2"
+  ],
+  "cv_summary_for_job_boards": "Rezumat profesionist, clar, ATS-friendly (max 120 cuvinte)",
+  "core_skills_keywords": [
+    "keyword 1",
+    "keyword 2",
+    "keyword 3"
+  ],
+  "notes_for_candidate": "Observații oneste despre limitările de mapare sau claritate ale CV-ului"
+}}
+
+CV:
+{cv_clean}
+"""
+
+        # =========================
+        # Apel Groq (prioritar)
+        # =========================
+        raw = ""
+        if USE_GROQ and groq_client:
+            raw = groq_text(prompt)
+            print("DEBUG /rewrite-cv - raw Groq response:", raw)
+
+        # =========================
+        # Fallback Gemini
+        # =========================
+        if not raw and gemini_client:
+            raw = gemini_text(prompt)
+            print("DEBUG /rewrite-cv - raw Gemini response:", raw)
+
+        parsed = safe_json(raw)
+        print("DEBUG /rewrite-cv - parsed:", parsed)
+
+        if not parsed or "cv_summary_for_job_boards" not in parsed:
+            return api_response(
+                error="AI nu a putut genera un rezultat valid pentru reformularea CV-ului",
+                code=503
+            )
+
+        return api_response(payload=parsed)
+
+    except Exception as e:
+        print("ERROR /rewrite-cv-for-job-boards:", str(e))
+        return api_response(
+            error=f"Eroare internă server: {str(e)}",
+            code=503
+        )
 
 # =========================
 # START
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
