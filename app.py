@@ -8,6 +8,7 @@ from google import genai
 import orjson
 from flask_compress import Compress
 from groq import Groq
+from itertools import zip_longest
 
 # =========================
 # CONFIG
@@ -225,9 +226,9 @@ Descrierea postului:
 def analyze_cv():
     """
     Analizează compatibilitatea unui CV cu descrierea jobului.
-    - Curăță textul (păstrând diacriticele)
-    - Împarte textul lung în chunk-uri dacă e necesar
-    - Returnează JSON cu scor și feedback fluent, corect gramatical
+    - Curăță textul (clean_text)
+    - Împarte textul lung în chunks dacă e necesar
+    - Returnează JSON cu scor și feedback, text fluent și corect gramatical
     """
     try:
         data = request.get_json(force=True)
@@ -238,62 +239,41 @@ def analyze_cv():
             return api_response(error="Date lipsă: CV și Job sunt necesare", code=400)
 
         # =========================
-        # CLEAN TEXT - păstrăm diacritice
+        # CLEAN TEXT
         # =========================
-        def clean_text_utf8(text: str) -> str:
-            # Eliminăm doar caractere neprintabile, păstrăm diacriticele
-            return "".join(c for c in text if c.isprintable()).strip()
-
-        cv_clean = clean_text_utf8(cv_raw)
-        job_clean = clean_text_utf8(job_raw)
+        cv_clean = clean_text(cv_raw)
+        job_clean = clean_text(job_raw)
 
         print("DEBUG /analyze-cv - CV length:", len(cv_clean), "Job length:", len(job_clean))
 
         # =========================
         # CHUNKING
         # =========================
-        def chunk_text(text: str, max_len: int = 3000) -> list:
-            chunks = []
-            start = 0
-            while start < len(text):
-                end = min(start + max_len, len(text))
-                chunks.append(text[start:end])
-                start = end
-            return chunks
-
-        cv_chunks = chunk_text(cv_clean)
-        job_chunks = chunk_text(job_clean)
+        cv_chunks = chunk_text(cv_clean, chunk_size=3000)
+        job_chunks = chunk_text(job_clean, chunk_size=3000)
 
         # =========================
-        # COMBINARE CHUNK-URI
+        # COMBINARE CHUNK-URI (zip_longest pentru a nu pierde nimic)
         # =========================
         combined_prompt_text = ""
-        for cv_chunk, job_chunk in zip(cv_chunks, job_chunks):
+        for cv_chunk, job_chunk in zip_longest(cv_chunks, job_chunks, fillvalue=""):
             combined_prompt_text += f"CV:\n{cv_chunk}\n\nJob:\n{job_chunk}\n\n"
-
-        # =========================
-        # PROMPT FINAL - instrucțiuni clare pentru text fluent
-        # =========================
-        model_prompt = f"""
-Ești un recrutor profesionist hibrid. Analizează compatibilitatea dintre CV și cerințele postului.
-Oferă procentaj realist (0-100) și feedback detaliat, profesionist, motivant.
-Scrie **text fluent, corect gramatical, în română**, cu toate diacriticele.
-Nu folosi prescurtări sau formulări agramate.
-Returnează NUMAI JSON valid:
-{{"compatibility_percent": număr_întreg, "feedback_markdown": "text curat și profesionist"}}
-
-{combined_prompt_text}
-"""
 
         # =========================
         # CERERE LA MODEL
         # =========================
+        model_prompt = f"""
+Ești un recrutor profesionist hibrid. Analizează compatibilitatea dintre CV și cerințele postului.
+Oferă procentaj realist (0-100) și feedback detaliat, profesional și motivant, scris fluent și corect gramatical în română.
+Returnează NUMAI JSON valid, fără text suplimentar:
+{{"compatibility_percent": număr_întreg, "feedback_markdown": "text curat, fluent și profesionist"}}
+
+{combined_prompt_text}
+"""
+
         raw = gemini_text(model_prompt)
         print("DEBUG /analyze-cv - Raw AI response:", raw)
 
-        # =========================
-        # PARSARE JSON
-        # =========================
         parsed = safe_json(raw)
         if not parsed or "compatibility_percent" not in parsed or "feedback_markdown" not in parsed:
             print("DEBUG /analyze-cv - Fallback JSON")
@@ -301,18 +281,10 @@ Returnează NUMAI JSON valid:
                 "compatibility_percent": 75,
                 "feedback_markdown": (
                     "CV-ul prezintă o aliniere bună cu cerințele postului. "
-                    "Se recomandă evidențierea mai clară a rezultatelor cuantificabile și a proiectelor relevante."
+                    "Se recomandă evidențierea mai clară a rezultatelor cuantificabile și a proiectelor relevante, "
+                    "precum și o prezentare coerentă și fluentă a experienței."
                 )
             }
-
-        # =========================
-        # OPTIONAL: POLISH FINAL (dacă vrei să refacem textul după chunking)
-        # =========================
-        final_prompt = f"""
-        Reformulează următorul feedback într-un text fluent si profesional, corect din punct de vedere gramatical si al acordurilor de gen și persoana; folosește diacritice:
-        {parsed['feedback_markdown']}
-        """
-        parsed['feedback_markdown'] = gemini_text(final_prompt) or parsed['feedback_markdown']
 
         return api_response(payload=parsed)
 
@@ -341,7 +313,7 @@ def generate_job_queries():
         # Promptul AI
         model_prompt = f"""
 Ești un expert în LinkedIn Job Search și recrutare. Pe baza CV-ului următor, generează **exact 7 interogări de job**, 
-fiecare având **un singur item de căutare** (rol sau denumire job conforma cu experienta descrisa in cv). Nu folosi OR sau combinații multiple.
+fiecare având **un singur item de căutare** (roluri sau denumiri de joburi compatibile cu experienta descrisa in cv). Nu folosi OR sau combinații multiple.
 Răspunde NUMAI cu JSON valid:
 {{"queries": ["query1", "query2", "query3", "query4", "query5", "query6", "query7"]}}
 
@@ -489,5 +461,6 @@ Istoric interviu:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
