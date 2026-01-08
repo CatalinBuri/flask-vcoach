@@ -665,24 +665,24 @@ def analyze_cv_quality():
     suggested_rephrasings = []
     for chunk in chunks:
         prompt_chunk = f"""
-Ești un recruiter hibrid experimentat, cu peste 10 ani de experiență umană combinată cu analiză AI avansată.
-Analizează fragmentul de CV de mai jos din perspectivă hibridă (empatie umană + rigurozitate AI).
+Ești un recruiter hibrid experimentat (experiență umană + AI). Analizează fragmentul de CV de mai jos.
 
-Pentru acest fragment:
-1. Atribuie un scor de claritate (0-10), bazat pe ușurința de înțelegere și absența ambiguităților.
-2. Atribuie un scor de relevanță pentru recruiteri (0-10), evaluând cât de bine evidențiază competențe cheie.
-3. Atribuie un scor de structură și logică (0-10), verificând fluxul logic și organizarea informațiilor.
-4. Listează 2-3 îmbunătățiri concrete, fiecare acompaniată de un exemplu specific (fără expresii precum 'sugerez să' sau 'sugerez ca'; folosește formulări directe, imperative sau descriptive). Dacă fragmentul este în engleză, listează îmbunătățirile în engleză.
-5. Listează 2-3 reformulări de fraze, fiecare acompaniată de un exemplu înainte/după (fără expresii precum 'sugerez să' sau 'sugerez ca'; folosește formulări directe). Dacă fragmentul este în engleză, păstrează reformulările în engleză.
-6. Fiecare propunere de imbunatatire sau reformulare sa fie in limba originala a CV-ului. NU propune îmbunătățiri concrete sau reformulări de fraze in alta limba diferita de a CV original. 
-Returnează NUMAI JSON valid:
+Instrucțiuni stricte pentru analiză și sugestii:
+1. Atribuie un scor de claritate (0-10) pentru ușurința de înțelegere și lipsa ambiguităților.
+2. Atribuie un scor de relevanță pentru recrutori (0-10) bazat pe cât de bine evidențiază competențe cheie.
+3. Atribuie un scor de structură și logică (0-10) verificând fluxul informațiilor.
+4. Listează 2-3 îmbunătățiri concrete, fiecare cu un exemplu clar. **Fiecare îmbunătățire trebuie să fie în limba originală a fragmentului CV-ului.**
+5. Listează 2-3 reformulări de fraze, cu exemplul Original/Nou. **Fiecare reformulare trebuie să fie în limba originală a fragmentului CV-ului.**
+6. NU traduce automat fraze. Dacă fragmentul este în engleză, toate sugestiile și reformulările trebuie să rămână în engleză. Dacă fragmentul este în română, păstrează româna.
+7. Returnează NUMAI JSON valid cu structura:
 {{
     "clarity_score": număr_intreg,
     "relevance_score": număr_intreg,
     "structure_score": număr_intreg,
-    "concrete_improvements": ["Îmbunătățire 1 cu exemplu: ...", "Îmbunătățire 2 cu exemplu: ..."],
+    "concrete_improvements": ["Îmbunătățire 1 cu exemplu...", "Îmbunătățire 2 cu exemplu..."],
     "suggested_rephrasings": ["Reformulare 1: Original: '...', Nou: '...'", "Reformulare 2: Original: '...', Nou: '...'"]
 }}
+
 Fragment CV:
 {chunk}
 """
@@ -719,6 +719,7 @@ Fragment CV:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
