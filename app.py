@@ -3,6 +3,7 @@ import json
 import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask_cors import cross_origin
 from dotenv import load_dotenv
 from google import genai
 import orjson
@@ -181,13 +182,14 @@ def gemini_text(prompt: str) -> str:
 @app.route("/ping", methods=["GET"])
 def ping():
     return jsonify({"status": "awake"})
-    
+@cross_origin(origins="*", methods=["POST", "OPTIONS"])    
 @app.route("/clear-memory", methods=["POST", "OPTIONS"])
 def clear_memory():
-    if request.method == "OPTIONS":
-        # răspunde preflight request
-        response = app.response_class(status=200)
-        return response
+    MEMORY["cv_text"] = None
+    return jsonify({
+        "status": "ok",
+        "payload": {"message": "Memoria CV a fost ștearsă cu succes"}
+    })
 
     MEMORY["cv_text"] = None
     return jsonify({
@@ -695,6 +697,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
