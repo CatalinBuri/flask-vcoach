@@ -584,6 +584,7 @@ REGULI STRICTE (OBLIGATORII):
 - Păstrează realitatea profesională a candidatului
 - Tradu titluri interne / nișate doar dacă există corespondență clară
 - Dacă NU există corespondență, MENȚIONEAZĂ EXPLICIT acest lucru
+- Dacă CV este în engleză, păstrează reformulările în engleză.
 
 STRUCTURA DE RĂSPUNS (JSON STRICT – fără text suplimentar):
 
@@ -654,42 +655,39 @@ def analyze_cv_quality():
     cv = clean_text(cv_raw)
     if not cv:
         return api_response(error="CV lipsă", code=400)
-
     MEMORY["cv_text"] = cv
     chunks = chunk_text(cv, chunk_size=3000)
-
     # stocăm scoruri și sugestii per chunk
     clarity_scores = []
     relevance_scores = []
     structure_scores = []
     concrete_improvements = []
     suggested_rephrasings = []
-
     for chunk in chunks:
         prompt_chunk = f"""
-Ești un recruiter senior. Analizează fragmentul de CV de mai jos.
+Ești un recruiter hibrid experimentat, cu peste 10 ani de experiență umană combinată cu analiză AI avansată.
+Analizează fragmentul de CV de mai jos din perspectivă hibridă (empatie umană + rigurozitate AI).
+
 Pentru acest fragment:
-1. Dă scor de claritate (0-10)
-2. Dă scor de relevanță pentru recruiter (0-10)
-3. Dă scor de structură și logică (0-10)
-4. Sugerează 2-3 îmbunătățiri concrete
-5. Sugerează 2-3 reformulări de fraze
+1. Atribuie un scor de claritate (0-10), bazat pe ușurința de înțelegere și absența ambiguităților.
+2. Atribuie un scor de relevanță pentru recruiteri (0-10), evaluând cât de bine evidențiază competențe cheie.
+3. Atribuie un scor de structură și logică (0-10), verificând fluxul logic și organizarea informațiilor.
+4. Listează 2-3 îmbunătățiri concrete, fiecare acompaniată de un exemplu specific (fără expresii precum 'sugerez să' sau 'sugerez ca'; folosește formulări directe, imperative sau descriptive). Dacă fragmentul este în engleză, păstrează îmbunătățirile în engleză.
+5. Listează 2-3 reformulări de fraze, fiecare acompaniată de un exemplu înainte/după (fără expresii precum 'sugerez să' sau 'sugerez ca'; folosește formulări directe). Dacă fragmentul este în engleză, păstrează reformulările în engleză.
 
 Returnează NUMAI JSON valid:
 {{
     "clarity_score": număr_intreg,
     "relevance_score": număr_intreg,
     "structure_score": număr_intreg,
-    "concrete_improvements": ["...", "..."],
-    "suggested_rephrasings": ["...", "..."]
+    "concrete_improvements": ["Îmbunătățire 1 cu exemplu: ...", "Îmbunătățire 2 cu exemplu: ..."],
+    "suggested_rephrasings": ["Reformulare 1: Original: '...', Nou: '...'", "Reformulare 2: Original: '...', Nou: '...'"]
 }}
-
 Fragment CV:
 {chunk}
 """
         raw_chunk = gemini_text(prompt_chunk)
         parsed_chunk = safe_json(raw_chunk)
-
         # fallback dacă AI nu răspunde corect
         if not parsed_chunk:
             parsed_chunk = {
@@ -699,23 +697,20 @@ Fragment CV:
                 "concrete_improvements": [],
                 "suggested_rephrasings": []
             }
-
         clarity_scores.append(parsed_chunk.get("clarity_score", 7))
         relevance_scores.append(parsed_chunk.get("relevance_score", 7))
         structure_scores.append(parsed_chunk.get("structure_score", 7))
         concrete_improvements.extend(parsed_chunk.get("concrete_improvements", []))
         suggested_rephrasings.extend(parsed_chunk.get("suggested_rephrasings", []))
-
     # medie scoruri
     final_payload = {
         "clarity_score": int(sum(clarity_scores)/len(clarity_scores)) if clarity_scores else 0,
         "relevance_score": int(sum(relevance_scores)/len(relevance_scores)) if relevance_scores else 0,
         "structure_score": int(sum(structure_scores)/len(structure_scores)) if structure_scores else 0,
         "overall_assessment": "CV-ul a fost analizat și scorurile au fost calculate.",
-        "concrete_improvements": concrete_improvements[:10],  # max 10 sugestii
-        "suggested_rephrasings": suggested_rephrasings[:10]  # max 10 propuneri
+        "concrete_improvements": concrete_improvements[:10], # max 10 sugestii
+        "suggested_rephrasings": suggested_rephrasings[:10] # max 10 propuneri
     }
-
     return api_response(payload=final_payload)
 
 
@@ -724,4 +719,5 @@ Fragment CV:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
