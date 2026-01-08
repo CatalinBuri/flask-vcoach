@@ -30,9 +30,9 @@ Compress(app)
 # =========================
 # SHARED MEMORY (SESSION-LIKE)
 # =========================
-#MEMORY = {
-#    "cv_text": None
-#}
+MEMORY = {
+    "cv_text": None
+}
 
 # =========================
 # CLIENT INIT
@@ -703,6 +703,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
