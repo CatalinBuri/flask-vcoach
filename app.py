@@ -181,7 +181,11 @@ def gemini_text(prompt: str) -> str:
 @app.route("/ping", methods=["GET"])
 def ping():
     return jsonify({"status": "awake"})
-
+    
+@app.route("/start-session", methods=["POST"])
+def start_session():
+    MEMORY["cv_text"] = None
+    return api_response(payload={"message": "Memoria a fost resetată pentru noua sesiune"})
 
 @app.route("/process-text", methods=["POST"])
 def process_text():
@@ -683,6 +687,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
