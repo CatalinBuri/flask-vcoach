@@ -27,6 +27,13 @@ CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 Compress(app)
 
 # =========================
+# SHARED MEMORY (SESSION-LIKE)
+# =========================
+MEMORY = {
+    "cv_text": None
+}
+
+# =========================
 # CLIENT INIT
 # =========================
 gemini_client = None
@@ -190,10 +197,13 @@ Text de rezumat:
 @app.route("/generate-questions", methods=["POST"])
 def generate_questions():
     data = request.get_json(force=True)
-    cv = data.get("cv_text", "").strip()
+    cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
     job = data.get("job_summary", "").strip()
+    cv = clean_text(cv_raw)
     if not cv or not job:
         return api_response(error="Date lipsă", code=400)
+    
+    MEMORY["cv_text"] = cv
     
     prompt = f"""
 Ești un recrutor profesionist hibrid (experiență umană + AI avansată).
@@ -233,7 +243,7 @@ def analyze_cv():
     """
     try:
         data = request.get_json(force=True)
-        cv_raw = data.get("cv_text", "").strip()
+        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
         job_raw = data.get("job_text", "").strip()
 
         if not cv_raw or not job_raw:
@@ -244,6 +254,8 @@ def analyze_cv():
         # =========================
         cv_clean = clean_text(cv_raw)
         job_clean = clean_text(job_raw)
+
+        MEMORY["cv_text"] = cv_clean
 
         print("DEBUG /analyze-cv - CV length:", len(cv_clean), "Job length:", len(job_clean))
 
@@ -259,7 +271,7 @@ def analyze_cv():
         chunk_feedbacks = []
         chunk_scores = []
 
-        for i, (cv_chunk, job_chunk) in enumerate(zip(cv_chunks, job_chunks)):
+        for i, (cv_chunk, job_chunk) in enumerate(zip_longest(cv_chunks, job_chunks, fillvalue="")):
             prompt_chunk = f"""
 Ești un recrutor profesionist cu experiență umană + AI. 
 Analizează compatibilitatea dintre CV și cerințele postului. 
@@ -324,7 +336,6 @@ Returnează NUMAI text curat, profesional și coerent.
         return api_response(error=f"Eroare internă: {str(e)}", code=500)
 
 
-
 @app.route("/generate-job-queries", methods=["POST"])
 def generate_job_queries():
     """
@@ -335,12 +346,13 @@ def generate_job_queries():
     """
     try:
         data = request.get_json(force=True)
-        cv_raw = data.get("cv_text", "").strip()
+        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+        cv_clean = clean_text(cv_raw)
 
-        if not cv_raw:
+        if not cv_clean:
             return api_response(error="CV lipsă", code=400)
 
-        cv_clean = clean_text(cv_raw)
+        MEMORY["cv_text"] = cv_clean
 
         prompt = f"""
 Ești un expert senior în recrutare și LinkedIn Job Search (2026).
@@ -429,12 +441,16 @@ CV:
             code=503
         )
 
+
 @app.route("/optimize-linkedin-profile", methods=["POST"])
-def optimize_linkedin():
+def optimize_linkedin_profile():
     data = request.get_json(force=True)
-    cv = data.get("cv_text", "").strip()
+    cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+    cv = clean_text(cv_raw)
     if not cv:
         return api_response(error="CV lipsă", code=400)
+    
+    MEMORY["cv_text"] = cv
     
     prompt = f"""
 Ești un recrutor profesionist hibrid (uman + AI). Optimizează profilul LinkedIn pe baza CV-ului.
@@ -520,7 +536,7 @@ Include un rezumat al performanței candidatului și un scor general (1-10), îm
 Returnează NUMAI JSON valid:
 {{"summary": "rezumat detaliat și profesionist", "scor_final": număr_întreg_de_la_1_la_10}}
 Istoric interviu:
-{history}
+{json.dumps(history)}
 """
     raw = gemini_text(prompt)
     parsed = safe_json(raw)
@@ -542,14 +558,15 @@ def reformulate_cv_for_job_boards():
     """
     try:
         data = request.get_json(force=True)
-
-        cv_raw = data.get("cv_text", "").strip()
-        job_raw = data.get("job_text", "").strip()  # opțional, NU obligatoriu
-
-        if not cv_raw:
-            return api_response(error="CV lipsă", code=400)
+        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+        job_raw = data.get("job_text", "").strip()
 
         cv_clean = clean_text(cv_raw)
+
+        if not cv_clean:
+            return api_response(error="CV lipsă", code=400)
+
+        MEMORY["cv_text"] = cv_clean
 
         prompt = f"""
 Ești un expert senior în recrutare internațională și sisteme ATS (2026).
@@ -630,18 +647,46 @@ Descriere job (opțional – dacă este relevantă):
             code=503
         )
 
+@app.route("/analyze-cv-quality", methods=["POST"])
+def analyze_cv_quality():
+    data = request.get_json(force=True)
+    cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+    cv = clean_text(cv_raw)
+    if not cv:
+        return api_response(error="CV lipsă", code=400)
+    
+    MEMORY["cv_text"] = cv
+    
+    chunks = chunk_text(cv, chunk_size=3000)
+    chunk_feedbacks = []
+    
+    for chunk in chunks:
+        prompt_chunk = f"""
+Ești un recruiter senior.
+Analizează CLARITATEA, LOGICA și PERTINENȚA acestui fragment de CV.
+NU inventa date.
+Returnează feedback și sugestii de reformulare.
+Fragment CV:
+{chunk}
+"""
+        raw_chunk = gemini_text(prompt_chunk)
+        chunk_feedbacks.append(raw_chunk)
+    
+    combined_feedback = "\n\n".join(chunk_feedbacks)
+    
+    final_prompt = f"""
+Combină și rescrie profesional următoarele feedback-uri într-un singur raport coerent în română:
+{combined_feedback}
+Returnează NUMAI textul raportului.
+"""
+    res_final = gemini_text(final_prompt)
+    if not res_final.strip():
+        res_final = combined_feedback
+    
+    return api_response(payload={"analysis": res_final})
 
 # =========================
 # START
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
-
-
-
-
-
-
-
-
-
