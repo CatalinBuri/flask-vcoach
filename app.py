@@ -665,16 +665,21 @@ def analyze_cv_quality():
     suggested_rephrasings = []
     for chunk in chunks:
         prompt_chunk = f"""
-Ești un recruiter hibrid experimentat (experiență umană + AI). Analizează fragmentul de CV de mai jos.
+Ești un recruiter senior hibrid (experiență umană + AI). Analizează fragmentul CV de mai jos.
 
-Instrucțiuni stricte pentru analiză și sugestii:
-1. Atribuie un scor de claritate (0-10) pentru ușurința de înțelegere și lipsa ambiguităților.
-2. Atribuie un scor de relevanță pentru recrutori (0-10) bazat pe cât de bine evidențiază competențe cheie.
-3. Atribuie un scor de structură și logică (0-10) verificând fluxul informațiilor.
-4. Listează 2-3 îmbunătățiri concrete, fiecare cu un exemplu clar. **Fiecare îmbunătățire trebuie să fie în limba originală a fragmentului CV-ului.**
-5. Listează 2-3 reformulări de fraze, cu exemplul Original/Nou. **Fiecare reformulare trebuie să fie în limba originală a fragmentului CV-ului.**
-6. NU traduce automat fraze. Dacă fragmentul este în engleză, toate sugestiile și reformulările trebuie să rămână în engleză. Dacă fragmentul este în română, păstrează româna.
-7. Returnează NUMAI JSON valid cu structura:
+Instrucțiuni stricte:
+1. Detectează limba fragmentului.
+2. Toate scorurile și propunerile trebuie să fie în aceeași limbă ca fragmentul original.
+3. Atribuie scoruri (0-10):
+   - clarity_score: claritatea fragmentului
+   - relevance_score: relevanța pentru recruiter
+   - structure_score: structură și logică
+4. Sugerează 2-3 îmbunătățiri concrete, cu exemple, **în limba originală a fragmentului**.
+5. Sugerează 2-3 reformulări fraze, fiecare cu Original/Nou, **în limba originală a fragmentului**.
+6. NU traduce niciodată fragmentul sau sugestiile în altă limbă.
+7. Răspunde NUMAI cu JSON valid, fără alte comentarii sau text.
+
+JSON așteptat:
 {{
     "clarity_score": număr_intreg,
     "relevance_score": număr_intreg,
@@ -719,6 +724,7 @@ Fragment CV:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
