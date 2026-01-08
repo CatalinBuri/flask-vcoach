@@ -17,7 +17,7 @@ load_dotenv()
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 MODEL_NAME = "gemini-2.5-flash"           # recomandat în 2026 – rapid și bun la instrucțiuni
-# MODEL_NAME = "gemini-1.5-flash-latest"  # dacă vrei varianta mai veche
+# MODEL_NAME = "gemini-1.5-flash-latest"  # dacă vrei varianta mai veche (încă funcționează pe unele conturi)
 
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 USE_GROQ = bool(GROQ_API_KEY)
@@ -125,7 +125,6 @@ def safe_json(text: str):
     try:
         return json.loads(text)
     except:
-        # încercăm să extragem primul obiect JSON valid
         match = re.search(r"\{.*\}", text, re.S | re.M)
         if match:
             try:
@@ -201,120 +200,6 @@ Text de rezumat:
     return api_response(payload={"t": summary})
 
 
-@app.route("/generate-questions", methods=["POST"])
-def generate_questions():
-    data = request.get_json(force=True)
-    cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
-    job = data.get("job_summary", "").strip()
-    cv = clean_text(cv_raw)
-    if not cv or not job:
-        return api_response(error="Date lipsă", code=400)
-
-    MEMORY["cv_text"] = cv
-
-    prompt = f"""
-Ești un recrutor profesionist hibrid (experiență umană + AI avansată).
-Generează exact 5 întrebări de interviu relevante, profesionale și bine țintite, bazate pe CV și descrierea postului.
-Îmbină întrebări comportamentale și de motivare (perspectivă umană) cu întrebări tehnice și de competențe măsurabile (rigurozitate AI).
-Formulează-le în română corectă, naturală și profesională.
-Returnează NUMAI JSON valid cu structura exactă:
-{{"questions": ["întrebare 1", "întrebare 2", "întrebare 3", "întrebare 4", "întrebare 5"]}}
-CV:
-{cv}
-Descrierea postului:
-{job}
-"""
-    raw = gemini_text(prompt)
-    parsed = safe_json(raw)
-    if not parsed or "questions" not in parsed or len(parsed.get("questions", [])) != 5:
-        parsed = {
-            "questions": [
-                "Povestiți despre experiența dumneavoastră cea mai relevantă pentru acest post.",
-                "Care considerați că sunt principalele dumneavoastră puncte forte în relație cu cerințele rolului?",
-                "Descrieți o situație challenging din carieră și modul în care ați gestionat-o.",
-                "Ce vă motivează să aplicați pentru această poziție în compania noastră?",
-                "Cum abordați învățarea continuă și adaptarea la tehnologii noi?"
-            ]
-        }
-    return api_response(payload=parsed)
-
-
-@app.route("/analyze-cv", methods=["POST"])
-def analyze_cv():
-    """
-    Analizează compatibilitatea unui CV cu descrierea jobului.
-    """
-    try:
-        data = request.get_json(force=True)
-        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
-        job_raw = data.get("job_text", "").strip()
-
-        if not cv_raw or not job_raw:
-            return api_response(error="Date lipsă: CV și Job sunt necesare", code=400)
-
-        cv_clean = clean_text(cv_raw)
-        job_clean = clean_text(job_raw)
-        MEMORY["cv_text"] = cv_clean
-
-        print("DEBUG /analyze-cv - CV length:", len(cv_clean), "Job length:", len(job_clean))
-
-        cv_chunks = chunk_text(cv_clean, chunk_size=3000)
-        job_chunks = chunk_text(job_clean, chunk_size=3000)
-
-        chunk_feedbacks = []
-        chunk_scores = []
-
-        for cv_chunk, job_chunk in zip_longest(cv_chunks, job_chunks, fillvalue=""):
-            prompt_chunk = f"""
-Ești un recrutor profesionist cu experiență umană + AI.
-Analizează compatibilitatea dintre CV și cerințele postului.
-Oferă procentaj realist (0-100) și feedback detaliat pentru acest fragment.
-Returnează NUMAI JSON valid:
-{{"compatibility_percent": număr_întreg, "feedback_markdown": "text curat și profesionist"}}
-CV fragment:
-{cv_chunk}
-Job fragment:
-{job_chunk}
-"""
-            raw_chunk = gemini_text(prompt_chunk)
-            parsed_chunk = safe_json(raw_chunk)
-
-            if not parsed_chunk or "compatibility_percent" not in parsed_chunk or "feedback_markdown" not in parsed_chunk:
-                parsed_chunk = {
-                    "compatibility_percent": 70,
-                    "feedback_markdown": "Fragmentul CV-ului are relevanță parțială pentru cerințele acestui segment al jobului."
-                }
-
-            chunk_feedbacks.append(parsed_chunk["feedback_markdown"])
-            chunk_scores.append(parsed_chunk["compatibility_percent"])
-
-        combined_feedback = "\n\n".join(chunk_feedbacks)
-
-        final_prompt = f"""
-Ai primit mai multe feedback-uri parțiale despre compatibilitatea unui CV cu descrierea unui job.
-Rescrie-le într-un text **profesionist, fluent și corect gramatical**, în română, fără erori.
-Text combinat din AI:
-{combined_feedback}
-Returnează NUMAI text curat, profesional și coerent.
-"""
-        res_final = gemini_text(final_prompt)
-        if not res_final.strip():
-            res_final = combined_feedback
-
-        final_score = int(sum(chunk_scores) / len(chunk_scores)) if chunk_scores else 75
-
-        payload = {
-            "compatibility_percent": final_score,
-            "feedback_markdown": res_final
-        }
-
-        return api_response(payload=payload)
-
-    except Exception as e:
-        print("ERROR /analyze-cv:", str(e))
-        return api_response(error=f"Eroare internă: {str(e)}", code=500)
-
-
 @app.route("/analyze-cv-quality", methods=["POST"])
 def analyze_cv_quality():
     data = request.get_json(force=True)
@@ -377,20 +262,407 @@ CV fragment:
         suggested_rephrasings.extend(parsed_chunk.get("suggested_rephrasings", []))
 
     final_payload = {
-        "clarity_score": int(sum(clarity_scores) / len(clarity_scores)) if clarity_scores else 0,
-        "relevance_score": int(sum(relevance_scores) / len(relevance_scores)) if relevance_scores else 0,
-        "structure_score": int(sum(structure_scores) / len(structure_scores)) if structure_scores else 0,
+        "clarity_score": int(sum(clarity_scores)/len(clarity_scores)) if clarity_scores else 0,
+        "relevance_score": int(sum(relevance_scores)/len(relevance_scores)) if relevance_scores else 0,
+        "structure_score": int(sum(structure_scores)/len(structure_scores)) if structure_scores else 0,
         "overall_assessment": "CV-ul a fost analizat și scorurile au fost calculate.",
-        "concrete_improvements": concrete_improvements[:10],     # max 10 sugestii
-        "suggested_rephrasings": suggested_rephrasings[:10]      # max 10 propuneri
+        "concrete_improvements": concrete_improvements[:10],  # max 10 sugestii
+        "suggested_rephrasings": suggested_rephrasings[:10]   # max 10 propuneri
     }
 
     return api_response(payload=final_payload)
 
 
-# ... restul endpoint-urilor (generate-job-queries, optimize-linkedin-profile, etc.)
-# le poți adăuga la fel, indentarea este deja corectată în cele de mai sus
+@app.route("/analyze-cv", methods=["POST"])
+def analyze_cv():
+    try:
+        data = request.get_json(force=True)
+        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+        job_raw = data.get("job_text", "").strip()
+
+        if not cv_raw or not job_raw:
+            return api_response(error="Date lipsă: CV și Job sunt necesare", code=400)
+
+        cv_clean = clean_text(cv_raw)
+        job_clean = clean_text(job_raw)
+
+        MEMORY["cv_text"] = cv_clean
+
+        print("DEBUG /analyze-cv - CV length:", len(cv_clean), "Job length:", len(job_clean))
+
+        cv_chunks = chunk_text(cv_clean, chunk_size=3000)
+        job_chunks = chunk_text(job_clean, chunk_size=3000)
+
+        chunk_feedbacks = []
+        chunk_scores = []
+
+        for i, (cv_chunk, job_chunk) in enumerate(zip_longest(cv_chunks, job_chunks, fillvalue="")):
+            prompt_chunk = f"""
+Ești un recrutor profesionist cu experiență umană + AI. 
+Analizează compatibilitatea dintre CV și cerințele postului. 
+Oferă procentaj realist (0-100) și feedback detaliat pentru acest fragment.
+
+Returnează NUMAI JSON valid:
+{{"compatibility_percent": număr_întreg, "feedback_markdown": "text curat și profesionist"}}
+
+CV fragment:
+{cv_chunk}
+
+Job fragment:
+{job_chunk}
+"""
+            raw_chunk = gemini_text(prompt_chunk)
+            parsed_chunk = safe_json(raw_chunk)
+
+            if not parsed_chunk or "compatibility_percent" not in parsed_chunk or "feedback_markdown" not in parsed_chunk:
+                parsed_chunk = {
+                    "compatibility_percent": 70,
+                    "feedback_markdown": "Fragmentul CV-ului are relevanță parțială pentru cerințele acestui segment al jobului."
+                }
+
+            chunk_feedbacks.append(parsed_chunk["feedback_markdown"])
+            chunk_scores.append(parsed_chunk["compatibility_percent"])
+
+        combined_feedback = "\n\n".join(chunk_feedbacks)
+
+        final_prompt = f"""
+Ai primit mai multe feedback-uri parțiale despre compatibilitatea unui CV cu descrierea unui job.
+Rescrie-le într-un text **profesionist, fluent și corect gramatical**, în română, fără erori, fără propoziții tăiate sau fără diacritice lipsă.
+Text combinat din AI:
+{combined_feedback}
+Returnează NUMAI text curat, profesional și coerent.
+"""
+        res_final = gemini_text(final_prompt)
+        if not res_final.strip():
+            res_final = combined_feedback
+
+        final_score = int(sum(chunk_scores) / len(chunk_scores)) if chunk_scores else 75
+
+        payload = {
+            "compatibility_percent": final_score,
+            "feedback_markdown": res_final
+        }
+
+        return api_response(payload=payload)
+
+    except Exception as e:
+        print("ERROR /analyze-cv:", str(e))
+        return api_response(error=f"Eroare internă: {str(e)}", code=500)
 
 
+@app.route("/generate-questions", methods=["POST"])
+def generate_questions():
+    data = request.get_json(force=True)
+    cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+    job = data.get("job_summary", "").strip()
+    cv = clean_text(cv_raw)
+    if not cv or not job:
+        return api_response(error="Date lipsă", code=400)
+
+    MEMORY["cv_text"] = cv
+
+    prompt = f"""
+Ești un recrutor profesionist hibrid (experiență umană + AI avansată).
+Generează exact 5 întrebări de interviu relevante, profesionale și bine țintite, bazate pe CV și descrierea postului.
+Îmbină întrebări comportamentale și de motivare (perspectivă umană) cu întrebări tehnice și de competențe măsurabile (rigurozitate AI).
+Formulează-le în română corectă, naturală și profesională.
+Returnează NUMAI JSON valid cu structura exactă:
+{{"questions": ["întrebare 1", "întrebare 2", "întrebare 3", "întrebare 4", "întrebare 5"]}}
+CV:
+{cv}
+Descrierea postului:
+{job}
+"""
+    raw = gemini_text(prompt)
+    parsed = safe_json(raw)
+    if not parsed or "questions" not in parsed or len(parsed.get("questions", [])) != 5:
+        parsed = {
+            "questions": [
+                "Povestiți despre experiența dumneavoastră cea mai relevantă pentru acest post.",
+                "Care considerați că sunt principalele dumneavoastră puncte forte în relație cu cerințele rolului?",
+                "Descrieți o situație challenging din carieră și modul în care ați gestionat-o.",
+                "Ce vă motivează să aplicați pentru această poziție în compania noastră?",
+                "Cum abordați învățarea continuă și adaptarea la tehnologii noi?"
+            ]
+        }
+    return api_response(payload=parsed)
+
+
+@app.route("/generate-job-queries", methods=["POST"])
+def generate_job_queries():
+    try:
+        data = request.get_json(force=True)
+        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+        cv_clean = clean_text(cv_raw)
+
+        if not cv_clean:
+            return api_response(error="CV lipsă", code=400)
+
+        MEMORY["cv_text"] = cv_clean
+
+        prompt = f"""
+Ești un expert senior în recrutare și LinkedIn Job Search (2026).
+
+Analizează EXCLUSIV CV-ul de mai jos și stabilește dacă experiența candidatului
+poate fi asociată CLAR cu roluri standard existente pe platforme de joburi
+(LinkedIn, Indeed, Glassdoor).
+
+REGULI CRITICE:
+- NU inventa roluri
+- NU forța potriviri
+- NU oferi alternative dacă nu există o asociere clară
+- NU folosi OR, paranteze sau combinații
+- FIECARE căutare trebuie să conțină UN SINGUR titlu de job standard (engleză)
+
+Dacă NU poți identifica MINIM 3 roluri clare și realiste,
+returnează EXACT acest JSON și NIMIC altceva:
+
+{{"status": "no_clear_match", "message": "Experiența candidatului este prea nișată sau formulată într-un mod care nu permite asocierea clară cu roluri standard de pe platformele de joburi."}}
+
+Dacă POȚI identifica roluri clare, returnează EXACT 7 căutări:
+
+{{"queries": [
+  "Job Title 1",
+  "Job Title 2",
+  "Job Title 3",
+  "Job Title 4",
+  "Job Title 5",
+  "Job Title 6",
+  "Job Title 7"
+]}}
+
+CV:
+{cv_clean}
+"""
+
+        raw = ""
+        if USE_GROQ and groq_client:
+            raw = groq_text(prompt)
+            print("DEBUG /generate-job-queries - raw Groq response:", raw)
+
+        if not raw and gemini_client:
+            raw = gemini_text(prompt)
+            print("DEBUG /generate-job-queries - raw Gemini response:", raw)
+
+        parsed = safe_json(raw)
+        print("DEBUG /generate-job-queries - parsed:", parsed)
+
+        if parsed and parsed.get("status") == "no_clear_match":
+            return api_response(payload=parsed)
+
+        if (
+            not parsed
+            or "queries" not in parsed
+            or not isinstance(parsed["queries"], list)
+            or len(parsed["queries"]) != 7
+        ):
+            return api_response(
+                payload={
+                    "status": "no_clear_match",
+                    "message": (
+                        "Experiența candidatului este prea nișată sau formulată într-un mod "
+                        "care nu permite asocierea clară cu roluri standard de pe platformele de joburi."
+                    )
+                }
+            )
+
+        return api_response(payload={"queries": parsed["queries"]})
+
+    except Exception as e:
+        print("ERROR /generate-job-queries:", str(e))
+        return api_response(error=f"Eroare internă server: {str(e)}", code=503)
+
+
+@app.route("/optimize-linkedin-profile", methods=["POST"])
+def optimize_linkedin_profile():
+    data = request.get_json(force=True)
+    cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+    cv = clean_text(cv_raw)
+    if not cv:
+        return api_response(error="CV lipsă", code=400)
+
+    MEMORY["cv_text"] = cv
+
+    prompt = f"""
+Ești un recrutor profesionist hibrid (uman + AI). Optimizează profilul LinkedIn pe baza CV-ului.
+Propune exact 5 headline-uri atractive, profesionale și concise, care combină povestea personală cu cuvinte-cheie esențiale pentru algoritmul LinkedIn.
+Scrie o secțiune About captivantă, autentică și profesională (300-500 cuvinte), care îmbină narativul uman (pasiune, valori, parcurs) cu optimizări AI (structură clară, rezultate măsurabile, SEO).
+Returnează NUMAI JSON valid:
+{{"linkedin_headlines": ["headline 1", "headline 2", "headline 3", "headline 4", "headline 5"], "linkedin_about": "text complet About"}}
+CV:
+{cv}
+"""
+    raw = gemini_text(prompt)
+    parsed = safe_json(raw)
+    if not parsed:
+        parsed = {
+            "linkedin_headlines": [
+                "Senior Software Engineer | Python & AI Enthusiast",
+                "Full Stack Developer | Building Scalable Solutions",
+                "Tech Lead | Driving Innovation & Team Growth",
+                "Data Engineer | Transforming Data into Insights",
+                "Software Architect | 10+ Years Crafting Robust Systems"
+            ],
+            "linkedin_about": "Profil LinkedIn optimizat profesional pe baza experienței dumneavoastră."
+        }
+    return api_response(payload=parsed)
+
+
+@app.route("/coach-next", methods=["POST"])
+def coach_next():
+    data = request.get_json(force=True)
+    answer = data.get("user_answer", "").strip()
+    if len(answer.split()) < 5:
+        return api_response(payload={"star_answer": "Răspunsul este prea scurt pentru a fi restructurat în format STAR."})
+
+    prompt = f"""
+Ești un recrutor profesionist hibrid. Rescrie răspunsul candidatului în structura STAR (Situație, Sarcină, Acțiune, Rezultat), păstrând toate detaliile esențiale.
+Folosește un limbaj profesionist, fluent, natural și empatic, care reflectă atât rigurozitatea structurii, cât și autenticitatea umană.
+Răspuns original:
+{answer}
+"""
+    text = clean_text(gemini_text(prompt))
+    return api_response(payload={"star_answer": text})
+
+
+@app.route("/evaluate-answer", methods=["POST"])
+def evaluate_answer():
+    data = request.get_json(force=True)
+    question = data.get("question", "").strip()
+    answer = data.get("answer", "").strip()
+    if not question or not answer:
+        return api_response(error="Date lipsă", code=400)
+
+    prompt = f"""
+Ești un recrutor profesionist hibrid (experiență umană + analiză AI).
+Evaluează răspunsul candidatului pe o scară de la 1 la 10 și oferă feedback detaliat, obiectiv, constructiv și motivant.
+Îmbină intuiția umană (claritate, autenticitate, impact emoțional) cu rigurozitatea AI (structură, relevanță, exemple concrete).
+Returnează NUMAI JSON valid:
+{{"nota_finala": număr_întreg_de_la_1_la_10, "feedback": "feedback text curat și profesionist"}}
+Întrebarea:
+{question}
+Răspunsul:
+{answer}
+"""
+    raw = gemini_text(prompt)
+    parsed = safe_json(raw)
+    if not parsed or "nota_finala" not in parsed:
+        parsed = {
+            "nota_finala": 7,
+            "feedback": "Răspunsul este solid și demonstrează experiență relevantă. Pentru un impact mai puternic, recomandăm includerea unor rezultate cuantificabile și o structură mai clară (ex: STAR)."
+        }
+    return api_response(payload={"current_evaluation": parsed})
+
+
+@app.route("/generate-report", methods=["POST"])
+def generate_report():
+    data = request.get_json(force=True)
+    history = data.get("history", [])
+    if not history:
+        return api_response(error="Istoric lipsă", code=400)
+
+    prompt = f"""
+Ești un recrutor profesionist hibrid. Analizează întregul istoric al interviului și generează un raport final obiectiv și profesionist.
+Include un rezumat al performanței candidatului și un scor general (1-10), îmbinând empatia umană cu analiza detaliată AI.
+Returnează NUMAI JSON valid:
+{{"summary": "rezumat detaliat și profesionist", "scor_final": număr_întreg_de_la_1_la_10}}
+Istoric interviu:
+{json.dumps(history)}
+"""
+    raw = gemini_text(prompt)
+    parsed = safe_json(raw)
+    if not parsed:
+        parsed = {
+            "summary": "Candidatul a demonstrat competențe solide și o atitudine profesionistă pe parcursul interviului. Există potențial ridicat, cu recomandări minore de îmbunătățire a structurii răspunsurilor.",
+            "scor_final": 8
+        }
+    return api_response(payload=parsed)
+
+
+@app.route("/reformulate-cv-for-job-boards", methods=["POST"])
+def reformulate_cv_for_job_boards():
+    try:
+        data = request.get_json(force=True)
+        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+        job_raw = data.get("job_text", "").strip()
+
+        cv_clean = clean_text(cv_raw)
+
+        if not cv_clean:
+            return api_response(error="CV lipsă", code=400)
+
+        MEMORY["cv_text"] = cv_clean
+
+        prompt = f"""
+Ești un expert senior în recrutare internațională și sisteme ATS (2026).
+
+Sarcina ta este să REFORMULEZI CV-ul candidatului pentru a fi:
+- ușor de înțeles
+- corect interpretat
+- eficient pe platforme de joburi (LinkedIn, Indeed, Glassdoor)
+- compatibil cu ATS-uri automate
+
+REGULI STRICTE (OBLIGATORII):
+- NU inventa experiență
+- NU exagera senioritatea
+- NU adăuga skill-uri care nu apar explicit sau logic în CV
+- Păstrează realitatea profesională a candidatului
+- Tradu titluri interne / nișate doar dacă există corespondență clară
+- Dacă NU există corespondență, MENȚIONEAZĂ EXPLICIT acest lucru
+- Dacă CV este în engleză, păstrează răspunsul în engleză
+
+STRUCTURA DE RĂSPUNS (JSON STRICT – fără text suplimentar):
+
+{{
+  "normalized_titles": [
+    "Titlu standard (dacă există)"
+  ],
+  "cv_summary_for_job_boards": "Rezumat profesionist, clar, ATS-friendly (max 120 cuvinte)",
+  "core_skills_keywords": [
+    "keyword ATS 1",
+    "keyword ATS 2"
+  ],
+  "notes_for_candidate": "Observații oneste despre limitări, ambiguități sau lipsă de mapare clară"
+}}
+
+CV:
+{cv_clean}
+
+Descriere job (opțional – dacă este relevantă):
+{job_raw}
+"""
+
+        raw = ""
+        if USE_GROQ and groq_client:
+            raw = groq_text(prompt)
+
+        if not raw and gemini_client:
+            raw = gemini_text(prompt)
+
+        parsed = safe_json(raw)
+
+        required_keys = [
+            "normalized_titles",
+            "cv_summary_for_job_boards",
+            "core_skills_keywords",
+            "notes_for_candidate"
+        ]
+
+        if not parsed or not all(k in parsed for k in required_keys):
+            return api_response(
+                error="AI nu a putut genera un rezultat valid pentru reformularea CV-ului",
+                code=503
+            )
+
+        return api_response(payload=parsed)
+
+    except Exception as e:
+        print("ERROR /reformulate-cv-for-job-boards:", str(e))
+        return api_response(error="Eroare internă server", code=503)
+
+
+# =========================
+# START
+# =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
