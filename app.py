@@ -183,6 +183,12 @@ def gemini_text(prompt: str) -> str:
 def ping():
     return jsonify({"status": "awake"})
 @cross_origin(origins="*", methods=["POST", "OPTIONS"])    
+@app.route("/check-cv-memory", methods=["GET"])
+def check_cv_memory():
+    if MEMORY.get("cv_text") and len(MEMORY["cv_text"].strip()) > 10:  # minim câteva caractere
+        return api_response(payload={"has_cv": True}, code=200)
+    else:
+        return api_response(error="No CV in memory", code=404)
 @app.route("/clear-memory", methods=["POST", "OPTIONS"])
 def clear_memory():
     MEMORY["cv_text"] = None
@@ -697,6 +703,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
