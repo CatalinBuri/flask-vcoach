@@ -220,26 +220,38 @@ def analyze_cv_quality():
 
     for chunk in chunks:
         prompt_chunk = f"""
-You are a senior hybrid recruiter (human experience + AI). Analyze the CV fragment below.
-Instructions (STRICT):
-1. Detect the language of the fragment.
-2. All scores, improvement suggestions, and rephrasings must be in the same language as the fragment.
-3. Assign scores from 0 to 10:
-   - clarity_score: clarity and ease of understanding
-   - relevance_score: relevance for recruiters
-   - structure_score: structure and logical flow
-4. Suggest 2-3 concrete improvements, each with an example, in the fragment's original language.
-5. Suggest 2-3 rephrased sentences, showing Original / New, in the fragment's original language.
-6. Do NOT translate anything. Preserve the original language.
-7. Return ONLY valid JSON, no extra text or commentary.
-Expected JSON structure:
+You are a senior hybrid recruiter with 10+ years of experience. Analyze ONLY the CV fragment below.
+CRITICAL RULES - FOLLOW EXACTLY OR THE OUTPUT IS INVALID:
+1. FIRST STEP: Detect the language of the CV fragment (English, Romanian, French, etc.).
+2. ALL output (scores descriptions, improvements, rephrasings) MUST be written IN THE SAME LANGUAGE as the CV fragment. NEVER translate to Romanian or any other language.
+3. If the fragment is in English → everything (improvements, rephrasings) stays in English.
+   If the fragment is in Romanian → everything stays in Romanian.
+   If the fragment is in French → everything stays in French.
+   Do NOT mix languages. Do NOT translate anything.
+4. NEVER produce reformulations or suggestions that translate the original text to Romanian.
+   Example of FORBIDDEN output:
+     "Nou: 'Asigură utilizarea eficientă...'"
+     "Am implementat funcții..." (when original is English)
+5. Return ONLY valid JSON. No explanations, no markdown, no extra text before or after JSON.
+
+Assign:
+- clarity_score: 0–10 (how clear and easy to understand)
+- relevance_score: 0–10 (how attractive/relevant for recruiters)
+- structure_score: 0–10 (logical flow and organization)
+
+concrete_improvements: exactly 2–3 items, each with a concrete example, in ORIGINAL language
+suggested_rephrasings: exactly 2–3 items in format:
+  "Rephrasing X: Original: \"...\", Improved: \"...\""
+
+JSON structure (strict):
 {{
-    "clarity_score": integer,
-    "relevance_score": integer,
-    "structure_score": integer,
-    "concrete_improvements": ["Improvement 1 example...", "Improvement 2 example..."],
-    "suggested_rephrasings": ["Rephrasing 1: Original: '...', New: '...'", "Rephrasing 2: Original: '...', New: '...'"]
+  "clarity_score": integer,
+  "relevance_score": integer,
+  "structure_score": integer,
+  "concrete_improvements": ["improvement text with example in original lang", ...],
+  "suggested_rephrasings": ["Rephrasing 1: Original: \"...\", Improved: \"...\"", ...]
 }}
+
 CV fragment:
 {chunk}
 """
@@ -666,3 +678,4 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
