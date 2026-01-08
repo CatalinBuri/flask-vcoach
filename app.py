@@ -648,7 +648,7 @@ Descriere job (opțional – dacă este relevantă):
             code=503
         )
 for chunk in chunks:
-prompt_chunk = f"""
+    prompt_chunk = f"""
 You are a senior hybrid recruiter (human experience + AI). Analyze the CV fragment below.
 
 Instructions (STRICT):
@@ -708,6 +708,7 @@ CV fragment:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
