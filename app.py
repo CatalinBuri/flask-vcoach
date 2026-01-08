@@ -672,9 +672,9 @@ Pentru acest fragment:
 1. Atribuie un scor de claritate (0-10), bazat pe ușurința de înțelegere și absența ambiguităților.
 2. Atribuie un scor de relevanță pentru recruiteri (0-10), evaluând cât de bine evidențiază competențe cheie.
 3. Atribuie un scor de structură și logică (0-10), verificând fluxul logic și organizarea informațiilor.
-4. Listează 2-3 îmbunătățiri concrete, fiecare acompaniată de un exemplu specific (fără expresii precum 'sugerez să' sau 'sugerez ca'; folosește formulări directe, imperative sau descriptive). Dacă fragmentul este în engleză, păstrează îmbunătățirile în engleză.
+4. Listează 2-3 îmbunătățiri concrete, fiecare acompaniată de un exemplu specific (fără expresii precum 'sugerez să' sau 'sugerez ca'; folosește formulări directe, imperative sau descriptive). Dacă fragmentul este în engleză, listează îmbunătățirile în engleză.
 5. Listează 2-3 reformulări de fraze, fiecare acompaniată de un exemplu înainte/după (fără expresii precum 'sugerez să' sau 'sugerez ca'; folosește formulări directe). Dacă fragmentul este în engleză, păstrează reformulările în engleză.
-
+6. Fiecare propunere de imbunatatire sau reformulare sa fie in limba originala a CV-ului. NU propune îmbunătățiri concrete sau reformulări de fraze in alta limba diferita de a CV original. 
 Returnează NUMAI JSON valid:
 {{
     "clarity_score": număr_intreg,
@@ -719,5 +719,6 @@ Fragment CV:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
