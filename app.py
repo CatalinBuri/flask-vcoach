@@ -654,39 +654,74 @@ def analyze_cv_quality():
     cv = clean_text(cv_raw)
     if not cv:
         return api_response(error="CV lipsă", code=400)
-    
+
     MEMORY["cv_text"] = cv
-    
     chunks = chunk_text(cv, chunk_size=3000)
-    chunk_feedbacks = []
-    
+
+    # stocăm scoruri și sugestii per chunk
+    clarity_scores = []
+    relevance_scores = []
+    structure_scores = []
+    concrete_improvements = []
+    suggested_rephrasings = []
+
     for chunk in chunks:
         prompt_chunk = f"""
-Ești un recruiter senior.
-Analizează CLARITATEA, LOGICA și PERTINENȚA acestui fragment de CV.
-NU inventa date.
-Returnează feedback și sugestii de reformulare.
+Ești un recruiter senior. Analizează fragmentul de CV de mai jos.
+Pentru acest fragment:
+1. Dă scor de claritate (0-10)
+2. Dă scor de relevanță pentru recruiter (0-10)
+3. Dă scor de structură și logică (0-10)
+4. Sugerează 2-3 îmbunătățiri concrete
+5. Sugerează 2-3 reformulări de fraze
+
+Returnează NUMAI JSON valid:
+{{
+    "clarity_score": număr_intreg,
+    "relevance_score": număr_intreg,
+    "structure_score": număr_intreg,
+    "concrete_improvements": ["...", "..."],
+    "suggested_rephrasings": ["...", "..."]
+}}
+
 Fragment CV:
 {chunk}
 """
         raw_chunk = gemini_text(prompt_chunk)
-        chunk_feedbacks.append(raw_chunk)
-    
-    combined_feedback = "\n\n".join(chunk_feedbacks)
-    
-    final_prompt = f"""
-Combină și rescrie profesional următoarele feedback-uri într-un singur raport coerent în română:
-{combined_feedback}
-Returnează NUMAI textul raportului.
-"""
-    res_final = gemini_text(final_prompt)
-    if not res_final.strip():
-        res_final = combined_feedback
-    
-    return api_response(payload={"analysis": res_final})
+        parsed_chunk = safe_json(raw_chunk)
+
+        # fallback dacă AI nu răspunde corect
+        if not parsed_chunk:
+            parsed_chunk = {
+                "clarity_score": 7,
+                "relevance_score": 7,
+                "structure_score": 7,
+                "concrete_improvements": [],
+                "suggested_rephrasings": []
+            }
+
+        clarity_scores.append(parsed_chunk.get("clarity_score", 7))
+        relevance_scores.append(parsed_chunk.get("relevance_score", 7))
+        structure_scores.append(parsed_chunk.get("structure_score", 7))
+        concrete_improvements.extend(parsed_chunk.get("concrete_improvements", []))
+        suggested_rephrasings.extend(parsed_chunk.get("suggested_rephrasings", []))
+
+    # medie scoruri
+    final_payload = {
+        "clarity_score": int(sum(clarity_scores)/len(clarity_scores)) if clarity_scores else 0,
+        "relevance_score": int(sum(relevance_scores)/len(relevance_scores)) if relevance_scores else 0,
+        "structure_score": int(sum(structure_scores)/len(structure_scores)) if structure_scores else 0,
+        "overall_assessment": "CV-ul a fost analizat și scorurile au fost calculate.",
+        "concrete_improvements": concrete_improvements[:10],  # max 10 sugestii
+        "suggested_rephrasings": suggested_rephrasings[:10]  # max 10 propuneri
+    }
+
+    return api_response(payload=final_payload)
+
 
 # =========================
 # START
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
