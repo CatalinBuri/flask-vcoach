@@ -224,15 +224,21 @@ You are a senior hybrid recruiter with 10+ years of experience. Analyze ONLY the
 CRITICAL RULES - FOLLOW EXACTLY OR THE OUTPUT IS INVALID:
 1. FIRST STEP: Detect the language of the CV fragment (English, Romanian, French, etc.).
 2. ALL output (scores descriptions, improvements, rephrasings) MUST be written IN THE SAME LANGUAGE as the CV fragment. NEVER translate to Romanian or any other language.
-3. If the fragment is in English → everything (improvements, rephrasings) stays in English.
+3. NUMBERING RULE - VERY IMPORTANT:
+   - Do NOT restart numbering per chunk/fragment.
+   - Use CONTINUOUS, GLOBAL numbering across the entire CV analysis.
+   - "Rephrasing 1:", "Rephrasing 2:", "Rephrasing 3:", ... Rephrasing N:
+   - "Improvement 1:", "Improvement 2:", ...
+   - Even if suggestions come from different parts of the CV, numbering continues sequentially.
+4. If the fragment is in English → everything (improvements, rephrasings) stays in English.
    If the fragment is in Romanian → everything stays in Romanian.
    If the fragment is in French → everything stays in French.
    Do NOT mix languages. Do NOT translate anything.
-4. NEVER produce reformulations or suggestions that translate the original text to Romanian.
+5. NEVER produce reformulations or suggestions that translate the original text to Romanian.
    Example of FORBIDDEN output:
      "Nou: 'Asigură utilizarea eficientă...'"
      "Am implementat funcții..." (when original is English)
-5. Return ONLY valid JSON. No explanations, no markdown, no extra text before or after JSON.
+6. Return ONLY valid JSON. No explanations, no markdown, no extra text before or after JSON.
 
 Assign:
 - clarity_score: 0–10 (how clear and easy to understand)
@@ -678,4 +684,5 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
