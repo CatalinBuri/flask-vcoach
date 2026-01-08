@@ -648,47 +648,31 @@ Descriere job (opțional – dacă este relevantă):
             code=503
         )
 
-@app.route("/analyze-cv-quality", methods=["POST"])
-def analyze_cv_quality():
-    data = request.get_json(force=True)
-    cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
-    cv = clean_text(cv_raw)
-    if not cv:
-        return api_response(error="CV lipsă", code=400)
-    MEMORY["cv_text"] = cv
-    chunks = chunk_text(cv, chunk_size=3000)
-    # stocăm scoruri și sugestii per chunk
-    clarity_scores = []
-    relevance_scores = []
-    structure_scores = []
-    concrete_improvements = []
-    suggested_rephrasings = []
-    for chunk in chunks:
-        prompt_chunk = f"""
-Ești un recruiter senior hibrid (experiență umană + AI). Analizează fragmentul CV de mai jos.
+prompt_chunk = f"""
+You are a senior hybrid recruiter (human experience + AI). Analyze the CV fragment below.
 
-Instrucțiuni stricte:
-1. Detectează limba fragmentului.
-2. Toate scorurile și propunerile trebuie să fie în aceeași limbă ca fragmentul original.
-3. Atribuie scoruri (0-10):
-   - clarity_score: claritatea fragmentului
-   - relevance_score: relevanța pentru recruiter
-   - structure_score: structură și logică
-4. Sugerează 2-3 îmbunătățiri concrete, cu exemple, **în limba originală a fragmentului**.
-5. Sugerează 2-3 reformulări fraze, fiecare cu Original/Nou, **în limba originală a fragmentului**.
-6. NU traduce niciodată fragmentul sau sugestiile în altă limbă.
-7. Răspunde NUMAI cu JSON valid, fără alte comentarii sau text.
+Instructions (STRICT):
+1. Detect the language of the fragment.
+2. All scores, improvement suggestions, and rephrasings must be in the same language as the fragment.
+3. Assign scores from 0 to 10:
+   - clarity_score: clarity and ease of understanding
+   - relevance_score: relevance for recruiters
+   - structure_score: structure and logical flow
+4. Suggest 2-3 concrete improvements, each with an example, in the fragment's original language.
+5. Suggest 2-3 rephrased sentences, showing Original / New, in the fragment's original language.
+6. Do NOT translate anything. Preserve the original language.
+7. Return ONLY valid JSON, no extra text or commentary.
 
-JSON așteptat:
+Expected JSON structure:
 {{
-    "clarity_score": număr_intreg,
-    "relevance_score": număr_intreg,
-    "structure_score": număr_intreg,
-    "concrete_improvements": ["Îmbunătățire 1 cu exemplu...", "Îmbunătățire 2 cu exemplu..."],
-    "suggested_rephrasings": ["Reformulare 1: Original: '...', Nou: '...'", "Reformulare 2: Original: '...', Nou: '...'"]
+    "clarity_score": integer,
+    "relevance_score": integer,
+    "structure_score": integer,
+    "concrete_improvements": ["Improvement 1 example...", "Improvement 2 example..."],
+    "suggested_rephrasings": ["Rephrasing 1: Original: '...', New: '...'", "Rephrasing 2: Original: '...', New: '...'"]
 }}
 
-Fragment CV:
+CV fragment:
 {chunk}
 """
         raw_chunk = gemini_text(prompt_chunk)
@@ -724,6 +708,7 @@ Fragment CV:
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
