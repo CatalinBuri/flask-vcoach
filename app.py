@@ -221,41 +221,39 @@ def analyze_cv_quality():
     for chunk in chunks:
         prompt_chunk = f"""
 You are a senior hybrid recruiter with 10+ years of experience. Analyze ONLY the CV fragment below.
-CRITICAL RULES - FOLLOW EXACTLY OR THE OUTPUT IS INVALID:
-1. FIRST STEP: Detect the language of the CV fragment (English, Romanian, French, etc.).
-2. ALL output (scores descriptions, improvements, rephrasings) MUST be written IN THE SAME LANGUAGE as the CV fragment. NEVER translate to Romanian or any other language.
-3. NUMBERING RULE - VERY IMPORTANT:
-   - Do NOT restart numbering per chunk/fragment.
-   - Use CONTINUOUS, GLOBAL numbering across the entire CV analysis.
-   - "Rephrasing 1:", "Rephrasing 2:", "Rephrasing 3:", ... Rephrasing N:
-   - "Improvement 1:", "Improvement 2:", ...
-   - Even if suggestions come from different parts of the CV, numbering continues sequentially.
-4. If the fragment is in English → everything (improvements, rephrasings) stays in English.
-   If the fragment is in Romanian → everything stays in Romanian.
-   If the fragment is in French → everything stays in French.
-   Do NOT mix languages. Do NOT translate anything.
-5. NEVER produce reformulations or suggestions that translate the original text to Romanian.
-   Example of FORBIDDEN output:
-     "Nou: 'Asigură utilizarea eficientă...'"
-     "Am implementat funcții..." (when original is English)
-6. Return ONLY valid JSON. No explanations, no markdown, no extra text before or after JSON.
+CRITICAL RULES - MUST FOLLOW EXACTLY:
+1. FIRST: Detect the language of the CV fragment (English, Romanian, etc.).
+2. ALL text in scores, improvements and rephrasings MUST be in THE SAME LANGUAGE as the fragment.
+   - If fragment is English → output in English only
+   - If fragment is Romanian → output in Romanian only
+   - NEVER translate or mix languages
+   - NEVER produce Romanian words/phrases when original is English
+3. Do NOT number the items in "concrete_improvements" or "suggested_rephrasings".
+   Do NOT use "Improvement 1:", "Rephrasing 1:", "1.", "*" or any numbering/prefixes inside the strings.
+   Return plain text suggestions without any numbering.
+4. For "suggested_rephrasings" use EXACT format:
+   "Original: \"exact original phrase\", Improved: \"better version\""
+   Do NOT add extra text, do NOT translate, do NOT use "Nou:", "Rephrasing", numbers or bullets.
+5. Return ONLY valid JSON — nothing else.
 
-Assign:
-- clarity_score: 0–10 (how clear and easy to understand)
-- relevance_score: 0–10 (how attractive/relevant for recruiters)
-- structure_score: 0–10 (logical flow and organization)
+Assign scores 0–10:
+- clarity_score: clarity & readability
+- relevance_score: attractiveness to recruiters
+- structure_score: logical flow & organization
 
-concrete_improvements: exactly 2–3 items, each with a concrete example, in ORIGINAL language
-suggested_rephrasings: exactly 2–3 items in format:
-  "Rephrasing X: Original: \"...\", Improved: \"...\""
+concrete_improvements: list of 2–3 concrete suggestions with examples, in original language
+suggested_rephrasings: list of 2–3 rephrasing pairs in exact format above
 
 JSON structure (strict):
 {{
-  "clarity_score": integer,
-  "relevance_score": integer,
-  "structure_score": integer,
-  "concrete_improvements": ["improvement text with example in original lang", ...],
-  "suggested_rephrasings": ["Rephrasing 1: Original: \"...\", Improved: \"...\"", ...]
+  "clarity_score": int,
+  "relevance_score": int,
+  "structure_score": int,
+  "concrete_improvements": ["suggestion with example...", ...],
+  "suggested_rephrasings": [
+    "Original: \"...\", Improved: \"...\"",
+    ...
+  ]
 }}
 
 CV fragment:
@@ -684,5 +682,6 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
