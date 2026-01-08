@@ -222,8 +222,9 @@ def analyze_cv_quality():
         prompt_chunk = f"""
 You are a senior hybrid recruiter with 10+ years of experience. Analyze ONLY the CV fragment below.
 CRITICAL RULES - MUST FOLLOW EXACTLY:
-1. FIRST: Detect the language of the CV fragment (English, Romanian, etc.).
-2. ALL text in scores, improvements and rephrasings MUST be in THE SAME LANGUAGE as the fragment.
+1. Detect the language of the fragment → ALL output (scores, improvements, rephrasings) in THAT language ONLY. NEVER translate to Romanian or any other language.
+2. NEVER produce Romanian sentences when fragment is English (no "Asigură", "Implementează", "Am realizat", "Nou:", etc.)
+3. ALL text in scores, improvements and rephrasings MUST be in THE SAME LANGUAGE as the fragment.
    - If fragment is English → output in English only
    - If fragment is Romanian → output in Romanian only
    - NEVER translate or mix languages
@@ -241,8 +242,8 @@ Assign scores 0–10:
 - relevance_score: attractiveness to recruiters
 - structure_score: logical flow & organization
 
-concrete_improvements: list of 2–3 concrete suggestions with examples, in original language
-suggested_rephrasings: list of 2–3 rephrasing pairs in exact format above
+concrete_improvements: list of 2 concrete suggestions with examples, in THE SAME LANGUAGE as the fragment
+suggested_rephrasings: list of 3 rephrasing pairs in THE SAME LANGUAGE as the fragment
 
 JSON structure (strict):
 {{
@@ -682,6 +683,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
