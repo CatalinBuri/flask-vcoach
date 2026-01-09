@@ -204,39 +204,26 @@ def clear_memory():
     })
 @app.route("/generate-coach-questions", methods=["POST"])
 def generate_coach_questions():
-    data = request.get_json(force=True)
-    cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
-    cv = clean_text(cv_raw)
-
-    if not cv:
-        return api_response(error="CV lipsă", code=400)
-
-    MEMORY["cv_text"] = cv
-
-    prompt = f"""
+    # Nu citim deloc CV-ul, ignorăm orice body trimis
+    prompt = """
 Ești un coach de interviu profesionist cu experiență umană + AI.
-
 Generează EXACT 7 întrebări de interviu GENERALISTE,
 potrivite pentru ORICE candidat, indiferent de rol sau companie.
-
-Tipuri de întrebări:
+Tipuri de întrebări acoperite:
 - motivație
 - valori
 - puncte forte / slabe
 - gestionare situații dificile
 - obiective pe termen mediu și lung
 - feedback și autoevaluare
-
-REGULI:
+REGULI STRICTE:
 - NU menționa compania
 - NU menționa un job specific
 - NU repeta întrebările
-- Formulează în română profesională, clară
-- Fără numerotare în text
-
-Returnează NUMAI JSON valid:
-
-{{
+- Formulează în română profesională, clară, naturală
+- Fără numerotare în textul întrebărilor
+Returnează NUMAI JSON valid, nimic altceva:
+{
   "questions": [
     "întrebare 1",
     "întrebare 2",
@@ -246,25 +233,21 @@ Returnează NUMAI JSON valid:
     "întrebare 6",
     "întrebare 7"
   ]
-}}
-
-CV:
-{cv}
+}
 """
-
     raw = gemini_text(prompt)
     parsed = safe_json(raw)
 
-    if not parsed or "questions" not in parsed or len(parsed["questions"]) < 5:
+    if not parsed or "questions" not in parsed or len(parsed["questions"]) != 7:
         parsed = {
             "questions": [
                 "Unde te vezi din punct de vedere profesional peste 5 ani?",
                 "Care consideri că este cel mai mare punct forte al tău?",
-                "Care este o zonă în care simți că mai ai de crescut?",
-                "Povestește despre o situație dificilă pe care ai gestionat-o la muncă.",
-                "Ce te motivează cel mai mult într-un rol profesional?",
-                "Cum primești și folosești feedback-ul?",
-                "Ce așteptări ai de la următorul pas din carieră?"
+                "În ce domeniu simți că mai ai cel mai mult de crescut?",
+                "Povestește despre o situație dificilă pe care ai gestionat-o la locul de muncă.",
+                "Ce te motivează cel mai mult atunci când lucrezi într-o echipă?",
+                "Cum recepționezi și aplici feedback-ul primit de la colegi sau manageri?",
+                "Care sunt așteptările tale realiste de la următorul rol profesional?"
             ]
         }
 
@@ -820,6 +803,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
