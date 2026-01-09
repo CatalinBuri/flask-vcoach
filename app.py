@@ -220,7 +220,7 @@ REGULI STRICTE:
 - NU menționa compania
 - NU menționa un job specific
 - NU repeta întrebările
-- Formulează în română profesională, clară, naturală
+- Formulează în română profesională, clară, naturală, corectă din punct devedere gramatical si folosind cuvinte comune, fară termeni tehnici.
 - Fără numerotare în textul întrebărilor
 Returnează NUMAI JSON valid, nimic altceva:
 {
@@ -264,26 +264,24 @@ def coach_generic_eval():
     if len(answer.split()) < 5:
         return api_response(payload={
             "feedback": "Răspunsul este prea scurt pentru o evaluare detaliată.",
-            "improved_answer": "Dezvoltă-ți ideile cu exemple personale pentru a primi feedback complet și o variantă optimizată."
+            "improved_answer": "Dezvoltă-ți ideile cu exemple personale pentru a primi feedback complet și o variantă optimizată.",
+            "nota_finala": 4  # scor minim pentru răspuns scurt
         })
 
+    # Promptul tău existent
     prompt = f"""
 Ești un recrutor senior cu experiență umană profundă și analiză AI riguroasă.
 Evaluează răspunsul candidatului la o întrebare generalistă de interviu (motivație, valori, puncte forte/slabe, obiective etc.).
 
 Oferă:
-1. Feedback scurt și constructiv (maxim 3 fraze). Acoperă:
-   - Claritate și structură
-   - Coerență și autenticitate
-   - Concretitudine și exemple relevante
-   - Impact general (ce transmite despre candidat – inspirat din MOSCOW: ce e esențial să rețină recrutorul?)
-
-2. O reformulare profesională completă – naturală, fluentă, concisă și cu impact maxim, care păstrează esența, dar o face mult mai puternică și memorabilă.
+1. Feedback scurt și constructiv (maxim 3 fraze). Acoperă claritate, coerență, concretitudine, impact.
+2. O reformulare profesională completă.
 
 Returnează NUMAI JSON valid:
 {{
   "feedback": "text feedback (maxim 3 fraze)",
-  "improved_answer": "răspunsul reformulat profesional"
+  "improved_answer": "răspunsul reformulat profesional",
+  "nota_finala": <score>
 }}
 
 Întrebarea:
@@ -296,10 +294,12 @@ Răspunsul candidatului:
     raw = gemini_text(prompt)
     parsed = safe_json(raw)
 
+    # Fallback dacă AI-ul nu returnează nota
     if not parsed or "feedback" not in parsed or "improved_answer" not in parsed:
         parsed = {
             "feedback": "Răspunsul tău arată potențial și autenticitate. Pentru un impact mai mare, adaugă un exemplu concret și structurează ideile mai clar. Continuă să exersezi – ești pe drumul bun!",
-            "improved_answer": answer  # fallback: returnează originalul dacă AI-ul eșuează
+            "improved_answer": answer,
+            "nota_finala": 6  # scor neutru fallback
         }
 
     return api_response(payload=parsed)
@@ -803,6 +803,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
