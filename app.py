@@ -202,6 +202,73 @@ def clear_memory():
         "status": "ok",
         "payload": {"message": "Memoria CV a fost ștearsă cu succes"}
     })
+@app.route("/generate-coach-questions", methods=["POST"])
+def generate_coach_questions():
+    data = request.get_json(force=True)
+    cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+    cv = clean_text(cv_raw)
+
+    if not cv:
+        return api_response(error="CV lipsă", code=400)
+
+    MEMORY["cv_text"] = cv
+
+    prompt = f"""
+Ești un coach de interviu profesionist cu experiență umană + AI.
+
+Generează EXACT 7 întrebări de interviu GENERALISTE,
+potrivite pentru ORICE candidat, indiferent de rol sau companie.
+
+Tipuri de întrebări:
+- motivație
+- valori
+- puncte forte / slabe
+- gestionare situații dificile
+- obiective pe termen mediu și lung
+- feedback și autoevaluare
+
+REGULI:
+- NU menționa compania
+- NU menționa un job specific
+- NU repeta întrebările
+- Formulează în română profesională, clară
+- Fără numerotare în text
+
+Returnează NUMAI JSON valid:
+
+{{
+  "questions": [
+    "întrebare 1",
+    "întrebare 2",
+    "întrebare 3",
+    "întrebare 4",
+    "întrebare 5",
+    "întrebare 6",
+    "întrebare 7"
+  ]
+}}
+
+CV:
+{cv}
+"""
+
+    raw = gemini_text(prompt)
+    parsed = safe_json(raw)
+
+    if not parsed or "questions" not in parsed or len(parsed["questions"]) < 5:
+        parsed = {
+            "questions": [
+                "Unde te vezi din punct de vedere profesional peste 5 ani?",
+                "Care consideri că este cel mai mare punct forte al tău?",
+                "Care este o zonă în care simți că mai ai de crescut?",
+                "Povestește despre o situație dificilă pe care ai gestionat-o la muncă.",
+                "Ce te motivează cel mai mult într-un rol profesional?",
+                "Cum primești și folosești feedback-ul?",
+                "Ce așteptări ai de la următorul pas din carieră?"
+            ]
+        }
+
+    return api_response(payload=parsed)
 
 @app.route("/process-text", methods=["POST"])
 def process_text():
@@ -703,6 +770,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
