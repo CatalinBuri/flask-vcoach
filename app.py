@@ -269,7 +269,57 @@ CV:
         }
 
     return api_response(payload=parsed)
+@app.route("/coach-generic-eval", methods=["POST"])
+def coach_generic_eval():
+    data = request.get_json(force=True)
+    question = data.get("question", "").strip()
+    answer = data.get("user_answer", "").strip()
 
+    if not question or not answer:
+        return api_response(error="Întrebare sau răspuns lipsă", code=400)
+
+    if len(answer.split()) < 5:
+        return api_response(payload={
+            "feedback": "Răspunsul este prea scurt pentru o evaluare detaliată.",
+            "improved_answer": "Dezvoltă-ți ideile cu exemple personale pentru a primi feedback complet și o variantă optimizată."
+        })
+
+    prompt = f"""
+Ești un recrutor senior cu experiență umană profundă și analiză AI riguroasă.
+Evaluează răspunsul candidatului la o întrebare generalistă de interviu (motivație, valori, puncte forte/slabe, obiective etc.).
+
+Oferă:
+1. Feedback scurt și constructiv (maxim 3 fraze). Acoperă:
+   - Claritate și structură
+   - Coerență și autenticitate
+   - Concretitudine și exemple relevante
+   - Impact general (ce transmite despre candidat – inspirat din MOSCOW: ce e esențial să rețină recrutorul?)
+
+2. O reformulare profesională completă – naturală, fluentă, concisă și cu impact maxim, care păstrează esența, dar o face mult mai puternică și memorabilă.
+
+Returnează NUMAI JSON valid:
+{{
+  "feedback": "text feedback (maxim 3 fraze)",
+  "improved_answer": "răspunsul reformulat profesional"
+}}
+
+Întrebarea:
+{question}
+
+Răspunsul candidatului:
+{answer}
+"""
+
+    raw = gemini_text(prompt)
+    parsed = safe_json(raw)
+
+    if not parsed or "feedback" not in parsed or "improved_answer" not in parsed:
+        parsed = {
+            "feedback": "Răspunsul tău arată potențial și autenticitate. Pentru un impact mai mare, adaugă un exemplu concret și structurează ideile mai clar. Continuă să exersezi – ești pe drumul bun!",
+            "improved_answer": answer  # fallback: returnează originalul dacă AI-ul eșuează
+        }
+
+    return api_response(payload=parsed)
 @app.route("/process-text", methods=["POST"])
 def process_text():
     data = request.get_json(force=True)
@@ -770,6 +820,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
