@@ -206,11 +206,7 @@ def clear_memory():
         "status": "ok",
         "payload": {"message": "Memoria CV a fost ștearsă cu succes"}
     })
-    MEMORY["cv_text"] = None
-    return jsonify({
-        "status": "ok",
-        "payload": {"message": "Memoria CV a fost ștearsă cu succes"}
-    })
+   
 @app.route("/generate-coach-questions", methods=["POST"])
 def generate_coach_questions():
     # Nu citim deloc CV-ul, ignorăm orice body trimis
@@ -899,4 +895,5 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
