@@ -10,24 +10,30 @@ import orjson
 from flask_compress import Compress
 from groq import Groq
 from itertools import zip_longest
+
 # =========================
 # CONFIG
 # =========================
 load_dotenv()
+
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-MODEL_NAME = "gemini-2.5-flash" # recomandat în 2026 – rapid și bun la instrucțiuni
-# MODEL_NAME = "gemini-1.5-flash-latest" # dacă vrei varianta mai veche (încă funcționează pe unele conturi)
+MODEL_NAME = "gemini-2.5-flash"           # recomandat în 2026 – rapid și bun la instrucțiuni
+# MODEL_NAME = "gemini-1.5-flash-latest"  # dacă vrei varianta mai veche (încă funcționează pe unele conturi)
+
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 USE_GROQ = bool(GROQ_API_KEY)
+
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 Compress(app)
+
 # =========================
 # SHARED MEMORY (SESSION-LIKE)
 # =========================
 MEMORY = {
     "cv_text": None
 }
+
 # =========================
 # CLIENT INIT
 # =========================
@@ -39,6 +45,7 @@ if GEMINI_API_KEY:
     except Exception as e:
         print(f"❌ Eroare la inițializarea Gemini Client: {str(e)}")
         gemini_client = None
+
 groq_client = None
 if USE_GROQ:
     try:
@@ -47,6 +54,8 @@ if USE_GROQ:
     except Exception as e:
         print(f"❌ Eroare la inițializarea Groq: {str(e)}")
         groq_client = None
+
+
 def groq_text(prompt: str) -> str:
     """
     Trimite prompt-ul la Groq și returnează textul complet.
@@ -64,18 +73,6 @@ def groq_text(prompt: str) -> str:
                     "content": (
                         "Ești un expert LinkedIn Job Search și recruiter profesionist. "
                         "Răspunde NUMAI cu JSON valid atunci când se solicită."
-                        "Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală. "
-                        "REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi: "
-                        "Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI "
-                        "Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc. "
-                        "Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră "
-                        "Interzis orice formă de politețe "
-                        "Interzis sa folosesti vreodata un nou oportunitate. Utilizeaza in schimb o nouă oportunitate "
-                        "Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet "
-                        "Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului "
-                        "Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț) "
-                        "Textul trebuie să sune natural, fluent, ca o conversație clară și corectă "
-                        "Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {\"eroare\": \"încălcare reguli stil română\"}"
                     )
                 },
                 {"role": "user", "content": prompt}
@@ -87,6 +84,8 @@ def groq_text(prompt: str) -> str:
     except Exception as e:
         print(f"Groq error: {str(e)}")
         return ""
+
+
 # =========================
 # UTILS
 # =========================
@@ -100,11 +99,15 @@ def api_response(payload=None, error=None, code=200):
         status=code,
         mimetype="application/json"
     )
+
+
 def clean_text(text: str) -> str:
     """Curăță textul eliminând spații multiple și caractere de control, păstrând diacritice."""
-    text = re.sub(r'\s+', ' ', text) # spații multiple → 1 spațiu
-    text = re.sub(r'[\x00-\x1F]+', '', text) # caractere de control
+    text = re.sub(r'\s+', ' ', text)           # spații multiple → 1 spațiu
+    text = re.sub(r'[\x00-\x1F]+', '', text)   # caractere de control
     return text.strip()
+
+
 def chunk_text(text: str, chunk_size: int = 2000) -> list:
     """Împarte textul în bucăți de lungime maximă chunk_size."""
     chunks = []
@@ -114,6 +117,8 @@ def chunk_text(text: str, chunk_size: int = 2000) -> list:
         chunks.append(text[start:end])
         start = end
     return chunks
+
+
 def safe_json(text: str):
     if not text:
         return None
@@ -128,6 +133,8 @@ def safe_json(text: str):
             except:
                 pass
     return None
+
+
 def gemini_text(prompt: str) -> str:
     """Prioritate Groq (mai rapid), fallback Gemini (new SDK)."""
     if USE_GROQ and groq_client:
@@ -142,18 +149,7 @@ def gemini_text(prompt: str) -> str:
                             "Îmbină empatia, intuiția și feedback-ul constructiv uman cu analiza obiectivă, riguroasă și bazată pe date a unui sistem AI. "
                             "Răspunde mereu cu maxim de profesionalism, obiectivitate și motivație pentru dezvoltarea candidatului. "
                             "Respectă EXACT instrucțiunile: dacă ți se cere JSON, returnează NUMAI JSON valid, fără text suplimentar, fără ```, fără markdown. "
-                            "Dacă ți se cere text simplu, răspunde NUMAI cu text curat, fluent și profesionist în română, fără asteriscuri, bold, liste marcate sau alte elemente de formatare. "
-                            "Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală. "
-                            "REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi: "
-                            "• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI "
-                            "• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc. "
-                            "• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră "
-                            "• Interzis orice formă de politețe "
-                            "• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet "
-                            "• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului "
-                            "• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț) "
-                            "• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă "
-                            "Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {\"eroare\": \"încălcare reguli stil română\"}"
+                            "Dacă ți se cere text simplu, răspunde NUMAI cu text curat, fluent și profesionist în română, fără asteriscuri, bold, liste marcate sau alte elemente de formatare."
                         )
                     },
                     {"role": "user", "content": prompt}
@@ -164,6 +160,7 @@ def gemini_text(prompt: str) -> str:
             return res.choices[0].message.content.strip()
         except Exception as e:
             print("Groq error:", str(e))
+
     if gemini_client:
         try:
             response = gemini_client.models.generate_content(
@@ -175,17 +172,20 @@ def gemini_text(prompt: str) -> str:
             return response.text.strip()
         except Exception as e:
             print(f"Gemini error: {type(e).__name__} - {str(e)}")
+
     return ""
+
+
 # =========================
 # ROUTES
 # =========================
 @app.route("/ping", methods=["GET"])
 def ping():
     return jsonify({"status": "awake"})
-@cross_origin(origins="*", methods=["POST", "OPTIONS"])
+@cross_origin(origins="*", methods=["POST", "OPTIONS"])    
 @app.route("/check-cv-memory", methods=["GET"])
 def check_cv_memory():
-    if MEMORY.get("cv_text") and len(MEMORY["cv_text"].strip()) > 10: # minim câteva caractere
+    if MEMORY.get("cv_text") and len(MEMORY["cv_text"].strip()) > 10:  # minim câteva caractere
         return api_response(payload={"has_cv": True}, code=200)
     else:
         return api_response(error="No CV in memory", code=404)
@@ -196,6 +196,7 @@ def clear_memory():
         "status": "ok",
         "payload": {"message": "Memoria CV a fost ștearsă cu succes"}
     })
+
     MEMORY["cv_text"] = None
     return jsonify({
         "status": "ok",
@@ -206,21 +207,6 @@ def generate_coach_questions():
     # Nu citim deloc CV-ul, ignorăm orice body trimis
     prompt = """
 Ești un coach de interviu profesionist cu experiență umană + AI.
-Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală.
-
-REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi:
-
-• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI
-• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc.
-• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră
-• Interzis orice formă de politețe
-• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet
-• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului
-• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț)
-• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă
-
-Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {"eroare": "încălcare reguli stil română"}
-
 Generează EXACT 7 întrebări de interviu GENERALISTE,
 potrivite pentru ORICE candidat, indiferent de rol sau companie.
 Tipuri de întrebări acoperite:
@@ -236,12 +222,6 @@ REGULI STRICTE:
 - NU repeta întrebările
 - Formulează în română profesională, clară, naturală, corectă din punct devedere gramatical si folosind cuvinte comune, fară termeni tehnici.
 - Fără numerotare în textul întrebărilor
-- Folosește EXCLUSIV persoana a II-a singular (tu) și verbe la persoana a persoana a II-a singular (ex: să cauți, să faci).
-- NU folosi forme de politețe (dumneavoastră, vă, ați).
-- NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
-- Scrie toate cuvintele complet, exact cum ar fi rostite natural.
-- Textul trebuie să fie corect gramatical, fluent și potrivit pentru redare vocală.
-- NU amesteca persoanele gramaticale sub nicio formă.
 Returnează NUMAI JSON valid, nimic altceva:
 {
   "questions": [
@@ -257,6 +237,7 @@ Returnează NUMAI JSON valid, nimic altceva:
 """
     raw = gemini_text(prompt)
     parsed = safe_json(raw)
+
     if not parsed or "questions" not in parsed or len(parsed["questions"]) != 7:
         parsed = {
             "questions": [
@@ -269,69 +250,58 @@ Returnează NUMAI JSON valid, nimic altceva:
                 "Care sunt așteptările tale realiste de la următorul rol profesional?"
             ]
         }
+
     return api_response(payload=parsed)
 @app.route("/coach-generic-eval", methods=["POST"])
 def coach_generic_eval():
     data = request.get_json(force=True)
     question = data.get("question", "").strip()
     answer = data.get("user_answer", "").strip()
+
     if not question or not answer:
         return api_response(error="Întrebare sau răspuns lipsă", code=400)
+
     if len(answer.split()) < 5:
         return api_response(payload={
             "feedback": "Răspunsul este prea scurt pentru o evaluare detaliată.",
             "improved_answer": "Dezvoltă-ți ideile cu exemple personale pentru a primi feedback complet și o variantă optimizată.",
-            "nota_finala": 4 # scor minim pentru răspuns scurt
+            "nota_finala": 4  # scor minim pentru răspuns scurt
         })
+
     # Promptul tău existent
     prompt = f"""
 Ești un recrutor senior cu experiență umană profundă și analiză AI riguroasă.
-Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală.
-
-REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi:
-
-• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI
-• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc.
-• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră
-• Interzis orice formă de politețe
-• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet
-• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului
-• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț)
-• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă
-
-Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {{"eroare": "încălcare reguli stil română"}}
-
 Evaluează răspunsul candidatului la o întrebare generalistă de interviu (motivație, valori, puncte forte/slabe, obiective etc.).
+
 Oferă:
 1. Feedback scurt și constructiv (maxim 3 fraze). Acoperă claritate, coerență, concretitudine, impact.
 2. O reformulare profesională completă.
-REGULI OBLIGATORII:
-- Folosește EXCLUSIV persoana a II-a singular (tu) și verbe la persoana a persoana a II-a singular (ex: să cauți, să faci).
-- NU folosi forme de politețe (dumneavoastră, vă, ați).
-- NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
-- Scrie toate cuvintele complet, exact cum ar fi rostite natural.
-- Textul trebuie să fie corect gramatical, fluent și potrivit pentru redare vocală.
-- NU amesteca persoanele gramaticale sub nicio formă.
+
 Returnează NUMAI JSON valid:
 {{
   "feedback": "text feedback (maxim 3 fraze)",
   "improved_answer": "răspunsul reformulat profesional",
   "nota_finala": <score>
 }}
+
 Întrebarea:
 {question}
+
 Răspunsul candidatului:
 {answer}
 """
+
     raw = gemini_text(prompt)
     parsed = safe_json(raw)
+
     # Fallback dacă AI-ul nu returnează nota
     if not parsed or "feedback" not in parsed or "improved_answer" not in parsed:
         parsed = {
             "feedback": "Răspunsul tău arată potențial și autenticitate. Pentru un impact mai mare, adaugă un exemplu concret și structurează ideile mai clar. Continuă să exersezi – ești pe drumul bun!",
             "improved_answer": answer,
-            "nota_finala": 6 # scor neutru fallback
+            "nota_finala": 6  # scor neutru fallback
         }
+
     return api_response(payload=parsed)
 @app.route("/process-text", methods=["POST"])
 def process_text():
@@ -339,29 +309,17 @@ def process_text():
     text = data.get("text", "").strip()
     if not text:
         return api_response(error="Text lipsă", code=400)
+
     prompt = f"""
 Realizează un rezumat clar, concis și extrem de profesionist al textului următor.
-Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală.
-
-REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi:
-
-• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI
-• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc.
-• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră
-• Interzis orice formă de politețe
-• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet
-• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului
-• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț)
-• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă
-
-Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {{"eroare": "încălcare reguli stil română"}}
-
 Răspunde NUMAI cu rezumatul, fără introduceri, titluri sau orice formatare.
 Text de rezumat:
 {text}
 """
     summary = clean_text(gemini_text(prompt))
     return api_response(payload={"t": summary})
+
+
 @app.route("/analyze-cv-quality", methods=["POST"])
 def analyze_cv_quality():
     data = request.get_json(force=True)
@@ -369,13 +327,17 @@ def analyze_cv_quality():
     cv = clean_text(cv_raw)
     if not cv:
         return api_response(error="CV lipsă", code=400)
+
     MEMORY["cv_text"] = cv
+
     chunks = chunk_text(cv, chunk_size=3000)
+
     clarity_scores = []
     relevance_scores = []
     structure_scores = []
     concrete_improvements = []
     suggested_rephrasings = []
+
     for chunk in chunks:
         prompt_chunk = f"""
 You are a senior hybrid recruiter with 10+ years of experience. Analyze ONLY the CV fragment below.
@@ -394,12 +356,15 @@ CRITICAL RULES - MUST FOLLOW EXACTLY:
    "Original: \"exact original phrase\", Improved: \"better version\""
    Do NOT add extra text, do NOT translate, do NOT use "Nou:", "Rephrasing", numbers or bullets.
 5. Return ONLY valid JSON — nothing else.
+
 Assign scores 0–10:
 - clarity_score: clarity & readability
 - relevance_score: attractiveness to recruiters
 - structure_score: logical flow & organization
+
 concrete_improvements: list of 2 concrete suggestions with examples, in THE SAME LANGUAGE as the fragment
 suggested_rephrasings: list of 3 rephrasing pairs in THE SAME LANGUAGE as the fragment
+
 JSON structure (strict):
 {{
   "clarity_score": int,
@@ -411,11 +376,13 @@ JSON structure (strict):
     ...
   ]
 }}
+
 CV fragment:
 {chunk}
 """
         raw_chunk = gemini_text(prompt_chunk)
         parsed_chunk = safe_json(raw_chunk)
+
         if not parsed_chunk:
             parsed_chunk = {
                 "clarity_score": 7,
@@ -424,97 +391,79 @@ CV fragment:
                 "concrete_improvements": [],
                 "suggested_rephrasings": []
             }
+
         clarity_scores.append(parsed_chunk.get("clarity_score", 7))
         relevance_scores.append(parsed_chunk.get("relevance_score", 7))
         structure_scores.append(parsed_chunk.get("structure_score", 7))
         concrete_improvements.extend(parsed_chunk.get("concrete_improvements", []))
         suggested_rephrasings.extend(parsed_chunk.get("suggested_rephrasings", []))
+
     final_payload = {
         "clarity_score": int(sum(clarity_scores)/len(clarity_scores)) if clarity_scores else 0,
         "relevance_score": int(sum(relevance_scores)/len(relevance_scores)) if relevance_scores else 0,
         "structure_score": int(sum(structure_scores)/len(structure_scores)) if structure_scores else 0,
         "overall_assessment": "CV-ul a fost analizat și scorurile au fost calculate.",
-        "concrete_improvements": concrete_improvements[:10], # max 10 sugestii
-        "suggested_rephrasings": suggested_rephrasings[:10] # max 10 propuneri
+        "concrete_improvements": concrete_improvements[:10],  # max 10 sugestii
+        "suggested_rephrasings": suggested_rephrasings[:10]   # max 10 propuneri
     }
+
     return api_response(payload=final_payload)
+
+
 @app.route("/analyze-cv", methods=["POST"])
 def analyze_cv():
     try:
         data = request.get_json(force=True)
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
         job_raw = data.get("job_text", "").strip()
+
         if not cv_raw or not job_raw:
             return api_response(error="Date lipsă: CV și Job sunt necesare", code=400)
+
         cv_clean = clean_text(cv_raw)
         job_clean = clean_text(job_raw)
+
         MEMORY["cv_text"] = cv_clean
+
         print("DEBUG /analyze-cv - CV length:", len(cv_clean), "Job length:", len(job_clean))
+
         cv_chunks = chunk_text(cv_clean, chunk_size=3000)
         job_chunks = chunk_text(job_clean, chunk_size=3000)
+
         chunk_feedbacks = []
         chunk_scores = []
+
         for i, (cv_chunk, job_chunk) in enumerate(zip_longest(cv_chunks, job_chunks, fillvalue="")):
             prompt_chunk = f"""
-Ești un recrutor profesionist cu experiență umană + AI.
-Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală.
-
-REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi:
-
-• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI
-• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc.
-• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră
-• Interzis orice formă de politețe
-• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet
-• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului
-• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț)
-• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă
-
-Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {{"eroare": "încălcare reguli stil română"}}
-
-Analizează compatibilitatea dintre CV și cerințele postului.
+Ești un recrutor profesionist cu experiență umană + AI. 
+Analizează compatibilitatea dintre CV și cerințele postului. 
 Oferă procentaj realist (0-100) și feedback detaliat pentru acest fragment.
-REGULI OBLIGATORII:
-- Folosește EXCLUSIV persoana a II-a singular (tu) și verbe la persoana a persoana a II-a singular (ex: să cauți, să faci).
-- NU folosi forme de politețe (dumneavoastră, vă, ați).
-- NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
-- Scrie toate cuvintele complet, exact cum ar fi rostite natural.
-- Textul trebuie să fie corect gramatical, fluent și potrivit pentru redare vocală.
-- NU amesteca persoanele gramaticale sub nicio formă.
+
 Returnează NUMAI JSON valid:
 {{"compatibility_percent": număr_întreg, "feedback_markdown": "text curat și profesionist"}}
+
 CV fragment:
 {cv_chunk}
+
 Job fragment:
 {job_chunk}
 """
             raw_chunk = gemini_text(prompt_chunk)
             parsed_chunk = safe_json(raw_chunk)
+
             if not parsed_chunk or "compatibility_percent" not in parsed_chunk or "feedback_markdown" not in parsed_chunk:
                 parsed_chunk = {
                     "compatibility_percent": 70,
                     "feedback_markdown": "Fragmentul CV-ului are relevanță parțială pentru cerințele acestui segment al jobului."
                 }
+
             chunk_feedbacks.append(parsed_chunk["feedback_markdown"])
             chunk_scores.append(parsed_chunk["compatibility_percent"])
+
         combined_feedback = "\n\n".join(chunk_feedbacks)
+
         final_prompt = f"""
 Ai primit mai multe feedback-uri parțiale despre compatibilitatea unui CV cu descrierea unui job.
-Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală.
-
-REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi:
-
-• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI
-• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc.
-• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră
-• Interzis orice formă de politețe
-• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet
-• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului
-• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț)
-• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă
-
-Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {{"eroare": "încălcare reguli stil română"}}
-
 Rescrie-le într-un text **profesionist, fluent și corect gramatical**, în română, fără erori, fără propoziții tăiate sau fără diacritice lipsă.
 Text combinat din AI:
 {combined_feedback}
@@ -523,15 +472,21 @@ Returnează NUMAI text curat, profesional și coerent.
         res_final = gemini_text(final_prompt)
         if not res_final.strip():
             res_final = combined_feedback
+
         final_score = int(sum(chunk_scores) / len(chunk_scores)) if chunk_scores else 75
+
         payload = {
             "compatibility_percent": final_score,
             "feedback_markdown": res_final
         }
+
         return api_response(payload=payload)
+
     except Exception as e:
         print("ERROR /analyze-cv:", str(e))
         return api_response(error=f"Eroare internă: {str(e)}", code=500)
+
+
 @app.route("/generate-questions", methods=["POST"])
 def generate_questions():
     data = request.get_json(force=True)
@@ -540,34 +495,14 @@ def generate_questions():
     cv = clean_text(cv_raw)
     if not cv or not job:
         return api_response(error="Date lipsă", code=400)
+
     MEMORY["cv_text"] = cv
+
     prompt = f"""
 Ești un recrutor profesionist hibrid (experiență umană + AI avansată).
-Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală.
-
-REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi:
-
-• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI
-• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc.
-• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră
-• Interzis orice formă de politețe
-• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet
-• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului
-• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț)
-• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă
-
-Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {{"eroare": "încălcare reguli stil română"}}
-
 Generează exact 5 întrebări de interviu relevante, profesionale și bine țintite, bazate pe CV și descrierea postului.
 Îmbină întrebări comportamentale și de motivare (perspectivă umană) cu întrebări tehnice și de competențe măsurabile (rigurozitate AI).
 Formulează-le în română corectă, naturală și profesională.
-REGULI OBLIGATORII:
-- Folosește EXCLUSIV persoana a II-a singular (tu) și verbe la persoana a persoana a II-a singular (ex: să cauți, să faci).
-- NU folosi forme de politețe (dumneavoastră, vă, ați).
-- NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
-- Scrie toate cuvintele complet, exact cum ar fi rostite natural.
-- Textul trebuie să fie corect gramatical, fluent și potrivit pentru redare vocală.
-- NU amesteca persoanele gramaticale sub nicio formă.
 Returnează NUMAI JSON valid cu structura exactă:
 {{"questions": ["întrebare 1", "întrebare 2", "întrebare 3", "întrebare 4", "întrebare 5"]}}
 CV:
@@ -580,38 +515,49 @@ Descrierea postului:
     if not parsed or "questions" not in parsed or len(parsed.get("questions", [])) != 5:
         parsed = {
             "questions": [
-                "Povestește experiența ta cea mai relevantă pentru acest post.",
-                "Care consideri că sunt principalele tale puncte forte în relație cu cerințele rolului?",
-                "Descrie o situație provocatoare din carieră și modul în care ai gestionat-o.",
-                "Ce te motivează să aplici pentru această poziție în compania noastră?",
-                "Cum abordezi învățarea continuă și adaptarea la tehnologii noi?"
+                "Povestiți despre experiența dumneavoastră cea mai relevantă pentru acest post.",
+                "Care considerați că sunt principalele dumneavoastră puncte forte în relație cu cerințele rolului?",
+                "Descrieți o situație challenging din carieră și modul în care ați gestionat-o.",
+                "Ce vă motivează să aplicați pentru această poziție în compania noastră?",
+                "Cum abordați învățarea continuă și adaptarea la tehnologii noi?"
             ]
         }
     return api_response(payload=parsed)
+
+
 @app.route("/generate-job-queries", methods=["POST"])
 def generate_job_queries():
     try:
         data = request.get_json(force=True)
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
         cv_clean = clean_text(cv_raw)
+
         if not cv_clean:
             return api_response(error="CV lipsă", code=400)
+
         MEMORY["cv_text"] = cv_clean
+
         prompt = f"""
 Ești un expert senior în recrutare și LinkedIn Job Search (2026).
+
 Analizează EXCLUSIV CV-ul de mai jos și stabilește dacă experiența candidatului
 poate fi asociată CLAR cu roluri standard existente pe platforme de joburi
 (LinkedIn, Indeed, Glassdoor).
+
 REGULI CRITICE:
 - NU inventa roluri
 - NU forța potriviri
 - NU oferi alternative dacă nu există o asociere clară
 - NU folosi OR, paranteze sau combinații
 - FIECARE căutare trebuie să conțină UN SINGUR titlu de job standard (engleză)
+
 Dacă NU poți identifica MINIM 3 roluri clare și realiste,
 returnează EXACT acest JSON și NIMIC altceva:
+
 {{"status": "no_clear_match", "message": "Experiența candidatului este prea nișată sau formulată într-un mod care nu permite asocierea clară cu roluri standard de pe platformele de joburi."}}
+
 Dacă POȚI identifica roluri clare, returnează EXACT 7 căutări:
+
 {{"queries": [
   "Job Title 1",
   "Job Title 2",
@@ -621,20 +567,26 @@ Dacă POȚI identifica roluri clare, returnează EXACT 7 căutări:
   "Job Title 6",
   "Job Title 7"
 ]}}
+
 CV:
 {cv_clean}
 """
+
         raw = ""
         if USE_GROQ and groq_client:
             raw = groq_text(prompt)
             print("DEBUG /generate-job-queries - raw Groq response:", raw)
+
         if not raw and gemini_client:
             raw = gemini_text(prompt)
             print("DEBUG /generate-job-queries - raw Gemini response:", raw)
+
         parsed = safe_json(raw)
         print("DEBUG /generate-job-queries - parsed:", parsed)
+
         if parsed and parsed.get("status") == "no_clear_match":
             return api_response(payload=parsed)
+
         if (
             not parsed
             or "queries" not in parsed
@@ -650,10 +602,14 @@ CV:
                     )
                 }
             )
+
         return api_response(payload={"queries": parsed["queries"]})
+
     except Exception as e:
         print("ERROR /generate-job-queries:", str(e))
         return api_response(error=f"Eroare internă server: {str(e)}", code=503)
+
+
 @app.route("/optimize-linkedin-profile", methods=["POST"])
 def optimize_linkedin_profile():
     data = request.get_json(force=True)
@@ -661,24 +617,11 @@ def optimize_linkedin_profile():
     cv = clean_text(cv_raw)
     if not cv:
         return api_response(error="CV lipsă", code=400)
+
     MEMORY["cv_text"] = cv
+
     prompt = f"""
 Ești un recrutor profesionist hibrid (uman + AI). Optimizează profilul LinkedIn pe baza CV-ului.
-Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală.
-
-REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi:
-
-• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI
-• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc.
-• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră
-• Interzis orice formă de politețe
-• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet
-• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului
-• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț)
-• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă
-
-Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {{"eroare": "încălcare reguli stil română"}}
-
 Propune exact 5 headline-uri atractive, profesionale și concise, care combină povestea personală cu cuvinte-cheie esențiale pentru algoritmul LinkedIn.
 Scrie o secțiune About captivantă, autentică și profesională (300-500 cuvinte), care îmbină narativul uman (pasiune, valori, parcurs) cu optimizări AI (structură clară, rezultate măsurabile, SEO).
 Returnează NUMAI JSON valid:
@@ -700,35 +643,25 @@ CV:
             "linkedin_about": "Profil LinkedIn optimizat profesional pe baza experienței dumneavoastră."
         }
     return api_response(payload=parsed)
+
+
 @app.route("/coach-next", methods=["POST"])
 def coach_next():
     data = request.get_json(force=True)
     answer = data.get("user_answer", "").strip()
     if len(answer.split()) < 5:
         return api_response(payload={"star_answer": "Răspunsul este prea scurt pentru a fi restructurat în format STAR."})
+
     prompt = f"""
 Ești un recrutor profesionist hibrid. Rescrie răspunsul candidatului în structura STAR (Situație, Sarcină, Acțiune, Rezultat), păstrând toate detaliile esențiale.
-Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală.
-
-REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi:
-
-• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI
-• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc.
-• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră
-• Interzis orice formă de politețe
-• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet
-• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului
-• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț)
-• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă
-
-Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {{"eroare": "încălcare reguli stil română"}}
-
 Folosește un limbaj profesionist, fluent, natural și empatic, care reflectă atât rigurozitatea structurii, cât și autenticitatea umană.
 Răspuns original:
 {answer}
 """
     text = clean_text(gemini_text(prompt))
     return api_response(payload={"star_answer": text})
+
+
 @app.route("/evaluate-answer", methods=["POST"])
 def evaluate_answer():
     data = request.get_json(force=True)
@@ -736,32 +669,11 @@ def evaluate_answer():
     answer = data.get("answer", "").strip()
     if not question or not answer:
         return api_response(error="Date lipsă", code=400)
+
     prompt = f"""
 Ești un recrutor profesionist hibrid (experiență umană + analiză AI).
-Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală.
-
-REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi:
-
-• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI
-• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc.
-• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră
-• Interzis orice formă de politețe
-• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet
-• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului
-• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț)
-• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă
-
-Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {{"eroare": "încălcare reguli stil română"}}
-
 Evaluează răspunsul candidatului pe o scară de la 1 la 10 și oferă feedback detaliat, obiectiv, constructiv și motivant.
 Îmbină intuiția umană (claritate, autenticitate, impact emoțional) cu rigurozitatea AI (structură, relevanță, exemple concrete).
-REGULI OBLIGATORII:
-- Folosește EXCLUSIV persoana a II-a singular (tu) și verbe la persoana a persoana a II-a singular (ex: să cauți, să faci).
-- NU folosi forme de politețe (dumneavoastră, vă, ați).
-- NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
-- Scrie toate cuvintele complet, exact cum ar fi rostite natural.
-- Textul trebuie să fie corect gramatical, fluent și potrivit pentru redare vocală.
-- NU amesteca persoanele gramaticale sub nicio formă.
 Returnează NUMAI JSON valid:
 {{"nota_finala": număr_întreg_de_la_1_la_10, "feedback": "feedback text curat și profesionist"}}
 Întrebarea:
@@ -777,37 +689,18 @@ Răspunsul:
             "feedback": "Răspunsul este solid și demonstrează experiență relevantă. Pentru un impact mai puternic, recomandăm includerea unor rezultate cuantificabile și o structură mai clară (ex: STAR)."
         }
     return api_response(payload={"current_evaluation": parsed})
+
+
 @app.route("/generate-report", methods=["POST"])
 def generate_report():
     data = request.get_json(force=True)
     history = data.get("history", [])
     if not history:
         return api_response(error="Istoric lipsă", code=400)
+
     prompt = f"""
 Ești un recrutor profesionist hibrid. Analizează întregul istoric al interviului și generează un raport final obiectiv și profesionist.
-Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală.
-
-REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi:
-
-• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI
-• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc.
-• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră
-• Interzis orice formă de politețe
-• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet
-• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului
-• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț)
-• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă
-
-Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {{"eroare": "încălcare reguli stil română"}}
-
 Include un rezumat al performanței candidatului și un scor general (1-10), îmbinând empatia umană cu analiza detaliată AI.
-REGULI OBLIGATORII:
-- Folosește EXCLUSIV persoana a II-a singular (tu) și verbe la persoana a persoana a II-a singular (ex: să cauți, să faci).
-- NU folosi forme de politețe (dumneavoastră, vă, ați).
-- NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
-- Scrie toate cuvintele complet, exact cum ar fi rostite natural.
-- Textul trebuie să fie corect gramatical, fluent și potrivit pentru redare vocală.
-- NU amesteca persoanele gramaticale sub nicio formă.
 Returnează NUMAI JSON valid:
 {{"summary": "rezumat detaliat și profesionist", "scor_final": număr_întreg_de_la_1_la_10}}
 Istoric interviu:
@@ -821,23 +714,31 @@ Istoric interviu:
             "scor_final": 8
         }
     return api_response(payload=parsed)
+
+
 @app.route("/reformulate-cv-for-job-boards", methods=["POST"])
 def reformulate_cv_for_job_boards():
     try:
         data = request.get_json(force=True)
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
         job_raw = data.get("job_text", "").strip()
+
         cv_clean = clean_text(cv_raw)
+
         if not cv_clean:
             return api_response(error="CV lipsă", code=400)
+
         MEMORY["cv_text"] = cv_clean
+
         prompt = f"""
 Ești un expert senior în recrutare internațională și sisteme ATS (2026).
+
 Sarcina ta este să REFORMULEZI CV-ul candidatului pentru a fi:
 - ușor de înțeles
 - corect interpretat
 - eficient pe platforme de joburi (LinkedIn, Indeed, Glassdoor)
 - compatibil cu ATS-uri automate
+
 REGULI STRICTE (OBLIGATORII):
 - NU inventa experiență
 - NU exagera senioritatea
@@ -846,7 +747,9 @@ REGULI STRICTE (OBLIGATORII):
 - Tradu titluri interne / nișate doar dacă există corespondență clară
 - Dacă NU există corespondență, MENȚIONEAZĂ EXPLICIT acest lucru
 - Dacă CV este în engleză, păstrează răspunsul în engleză
+
 STRUCTURA DE RĂSPUNS (JSON STRICT – fără text suplimentar):
+
 {{
   "normalized_titles": [
     "Titlu standard (dacă există)"
@@ -858,35 +761,59 @@ STRUCTURA DE RĂSPUNS (JSON STRICT – fără text suplimentar):
   ],
   "notes_for_candidate": "Observații oneste despre limitări, ambiguități sau lipsă de mapare clară"
 }}
+
 CV:
 {cv_clean}
+
 Descriere job (opțional – dacă este relevantă):
 {job_raw}
 """
+
         raw = ""
         if USE_GROQ and groq_client:
             raw = groq_text(prompt)
+
         if not raw and gemini_client:
             raw = gemini_text(prompt)
+
         parsed = safe_json(raw)
+
         required_keys = [
             "normalized_titles",
             "cv_summary_for_job_boards",
             "core_skills_keywords",
             "notes_for_candidate"
         ]
+
         if not parsed or not all(k in parsed for k in required_keys):
             return api_response(
                 error="AI nu a putut genera un rezultat valid pentru reformularea CV-ului",
                 code=503
             )
+
         return api_response(payload=parsed)
+
     except Exception as e:
         print("ERROR /reformulate-cv-for-job-boards:", str(e))
         return api_response(error="Eroare internă server", code=503)
+
+
 # =========================
 # START
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
+
+
+
+
+
+
+
+
+
+
+
+
 
