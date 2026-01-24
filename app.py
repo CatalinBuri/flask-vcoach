@@ -70,6 +70,7 @@ def groq_text(prompt: str) -> str:
                         "Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc. "
                         "Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră "
                         "Interzis orice formă de politețe "
+                        "Interzis sa folosesti vreodata un nou oportunitate. Utilizeaza in schimb o nouă oportunitate "
                         "Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet "
                         "Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului "
                         "Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț) "
@@ -888,3 +889,4 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
