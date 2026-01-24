@@ -222,6 +222,13 @@ REGULI STRICTE:
 - NU repeta întrebările
 - Formulează în română profesională, clară, naturală, corectă din punct devedere gramatical si folosind cuvinte comune, fară termeni tehnici.
 - Fără numerotare în textul întrebărilor
+REGULI OBLIGATORII:
+- Folosește EXCLUSIV persoana a II-a singular (tu).
+- NU folosi forme de politețe (dumneavoastră, vă, ați).
+- NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
+- Scrie toate cuvintele complet, exact cum ar fi rostite natural.
+- Textul trebuie să fie corect gramatical, fluent și potrivit pentru redare vocală.
+- NU amesteca persoanele gramaticale sub nicio formă.
 Returnează NUMAI JSON valid, nimic altceva:
 {
   "questions": [
@@ -276,7 +283,13 @@ Evaluează răspunsul candidatului la o întrebare generalistă de interviu (mot
 Oferă:
 1. Feedback scurt și constructiv (maxim 3 fraze). Acoperă claritate, coerență, concretitudine, impact.
 2. O reformulare profesională completă.
-
+REGULI OBLIGATORII:
+- Folosește EXCLUSIV persoana a II-a singular (tu).
+- NU folosi forme de politețe (dumneavoastră, vă, ați).
+- NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
+- Scrie toate cuvintele complet, exact cum ar fi rostite natural.
+- Textul trebuie să fie corect gramatical, fluent și potrivit pentru redare vocală.
+- NU amesteca persoanele gramaticale sub nicio formă.
 Returnează NUMAI JSON valid:
 {{
   "feedback": "text feedback (maxim 3 fraze)",
@@ -438,7 +451,13 @@ def analyze_cv():
 Ești un recrutor profesionist cu experiență umană + AI. 
 Analizează compatibilitatea dintre CV și cerințele postului. 
 Oferă procentaj realist (0-100) și feedback detaliat pentru acest fragment.
-
+REGULI OBLIGATORII:
+- Folosește EXCLUSIV persoana a II-a singular (tu).
+- NU folosi forme de politețe (dumneavoastră, vă, ați).
+- NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
+- Scrie toate cuvintele complet, exact cum ar fi rostite natural.
+- Textul trebuie să fie corect gramatical, fluent și potrivit pentru redare vocală.
+- NU amesteca persoanele gramaticale sub nicio formă.
 Returnează NUMAI JSON valid:
 {{"compatibility_percent": număr_întreg, "feedback_markdown": "text curat și profesionist"}}
 
@@ -503,6 +522,13 @@ Ești un recrutor profesionist hibrid (experiență umană + AI avansată).
 Generează exact 5 întrebări de interviu relevante, profesionale și bine țintite, bazate pe CV și descrierea postului.
 Îmbină întrebări comportamentale și de motivare (perspectivă umană) cu întrebări tehnice și de competențe măsurabile (rigurozitate AI).
 Formulează-le în română corectă, naturală și profesională.
+REGULI OBLIGATORII:
+- Folosește EXCLUSIV persoana a II-a singular (tu).
+- NU folosi forme de politețe (dumneavoastră, vă, ați).
+- NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
+- Scrie toate cuvintele complet, exact cum ar fi rostite natural.
+- Textul trebuie să fie corect gramatical, fluent și potrivit pentru redare vocală.
+- NU amesteca persoanele gramaticale sub nicio formă.
 Returnează NUMAI JSON valid cu structura exactă:
 {{"questions": ["întrebare 1", "întrebare 2", "întrebare 3", "întrebare 4", "întrebare 5"]}}
 CV:
@@ -674,6 +700,13 @@ def evaluate_answer():
 Ești un recrutor profesionist hibrid (experiență umană + analiză AI).
 Evaluează răspunsul candidatului pe o scară de la 1 la 10 și oferă feedback detaliat, obiectiv, constructiv și motivant.
 Îmbină intuiția umană (claritate, autenticitate, impact emoțional) cu rigurozitatea AI (structură, relevanță, exemple concrete).
+REGULI OBLIGATORII:
+- Folosește EXCLUSIV persoana a II-a singular (tu).
+- NU folosi forme de politețe (dumneavoastră, vă, ați).
+- NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
+- Scrie toate cuvintele complet, exact cum ar fi rostite natural.
+- Textul trebuie să fie corect gramatical, fluent și potrivit pentru redare vocală.
+- NU amesteca persoanele gramaticale sub nicio formă.
 Returnează NUMAI JSON valid:
 {{"nota_finala": număr_întreg_de_la_1_la_10, "feedback": "feedback text curat și profesionist"}}
 Întrebarea:
@@ -701,6 +734,13 @@ def generate_report():
     prompt = f"""
 Ești un recrutor profesionist hibrid. Analizează întregul istoric al interviului și generează un raport final obiectiv și profesionist.
 Include un rezumat al performanței candidatului și un scor general (1-10), îmbinând empatia umană cu analiza detaliată AI.
+REGULI OBLIGATORII:
+- Folosește EXCLUSIV persoana a II-a singular (tu).
+- NU folosi forme de politețe (dumneavoastră, vă, ați).
+- NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
+- Scrie toate cuvintele complet, exact cum ar fi rostite natural.
+- Textul trebuie să fie corect gramatical, fluent și potrivit pentru redare vocală.
+- NU amesteca persoanele gramaticale sub nicio formă.
 Returnează NUMAI JSON valid:
 {{"summary": "rezumat detaliat și profesionist", "scor_final": număr_întreg_de_la_1_la_10}}
 Istoric interviu:
@@ -803,6 +843,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
