@@ -180,12 +180,7 @@ def gemini_text(prompt: str) -> str:
             print(f"Gemini error: {type(e).__name__} - {str(e)}")
     return ""
 
-# =========================
-# ROUTES
-# =========================
-@app.route("/ping", methods=["GET"])
-def ping():
-    return jsonify({"status": "awake"})
+
 # =========================
 # ROUTES
 # =========================
@@ -895,5 +890,6 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
