@@ -10,6 +10,7 @@ import orjson
 from flask_compress import Compress
 from groq import Groq
 from itertools import zip_longest
+
 # =========================
 # CONFIG
 # =========================
@@ -19,15 +20,34 @@ MODEL_NAME = "gemini-2.5-flash" # recomandat în 2026 – rapid și bun la instr
 # MODEL_NAME = "gemini-1.5-flash-latest" # dacă vrei varianta mai veche (încă funcționează pe unele conturi)
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 USE_GROQ = bool(GROQ_API_KEY)
+
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 Compress(app)
+
 # =========================
 # SHARED MEMORY (SESSION-LIKE)
 # =========================
 MEMORY = {
     "cv_text": None
 }
+
+# =========================
+# COMMON ROMANIAN RULES
+# =========================
+COMMON_ROMANIAN_RULES = """
+REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi:
+• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI
+• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc.
+• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră
+• Interzis orice formă de politețe
+• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet
+• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului
+• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț)
+• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă
+Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {{"eroare": "încălcare reguli stil română"}}
+"""
+
 # =========================
 # CLIENT INIT
 # =========================
@@ -39,6 +59,7 @@ if GEMINI_API_KEY:
     except Exception as e:
         print(f"❌ Eroare la inițializarea Gemini Client: {str(e)}")
         gemini_client = None
+
 groq_client = None
 if USE_GROQ:
     try:
@@ -47,6 +68,7 @@ if USE_GROQ:
     except Exception as e:
         print(f"❌ Eroare la inițializarea Groq: {str(e)}")
         groq_client = None
+
 def groq_text(prompt: str) -> str:
     """
     Trimite prompt-ul la Groq și returnează textul complet.
@@ -62,19 +84,10 @@ def groq_text(prompt: str) -> str:
                 {
                     "role": "system",
                     "content": (
-                        "Ești un expert LinkedIn Job Search și recruiter profesionist. "
-                        "Răspunde NUMAI cu JSON valid atunci când se solicită."
-                        "Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală. "
-                        "REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi: "
-                        "• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI "
-                        "• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc. "
-                        "• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră "
-                        "• Interzis orice formă de politețe "
-                        "• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet "
-                        "• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului "
-                        "• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț) "
-                        "• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă "
-                        "Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {\"eroare\": \"încălcare reguli stil română\"}"
+                        f"Ești un expert LinkedIn Job Search și recruiter profesionist. "
+                        f"Răspunde NUMAI cu JSON valid atunci când se solicită. "
+                        f"Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală. "
+                        f"{COMMON_ROMANIAN_RULES}"
                     )
                 },
                 {"role": "user", "content": prompt}
@@ -86,6 +99,7 @@ def groq_text(prompt: str) -> str:
     except Exception as e:
         print(f"Groq error: {str(e)}")
         return ""
+
 # =========================
 # UTILS
 # =========================
@@ -99,11 +113,13 @@ def api_response(payload=None, error=None, code=200):
         status=code,
         mimetype="application/json"
     )
+
 def clean_text(text: str) -> str:
     """Curăță textul eliminând spații multiple și caractere de control, păstrând diacritice."""
     text = re.sub(r'\s+', ' ', text) # spații multiple → 1 spațiu
     text = re.sub(r'[\x00-\x1F]+', '', text) # caractere de control
     return text.strip()
+
 def chunk_text(text: str, chunk_size: int = 2000) -> list:
     """Împarte textul în bucăți de lungime maximă chunk_size."""
     chunks = []
@@ -113,6 +129,7 @@ def chunk_text(text: str, chunk_size: int = 2000) -> list:
         chunks.append(text[start:end])
         start = end
     return chunks
+
 def safe_json(text: str):
     if not text:
         return None
@@ -127,6 +144,7 @@ def safe_json(text: str):
             except:
                 pass
     return None
+
 def gemini_text(prompt: str) -> str:
     """Prioritate Groq (mai rapid), fallback Gemini (new SDK)."""
     if USE_GROQ and groq_client:
@@ -137,22 +155,8 @@ def gemini_text(prompt: str) -> str:
                     {
                         "role": "system",
                         "content": (
-                            "Ești un recrutor profesionist cu peste 10 ani de experiență umană, asistat de inteligență artificială avansată. "
-                            "Îmbină empatia, intuiția și feedback-ul constructiv uman cu analiza obiectivă, riguroasă și bazată pe date a unui sistem AI. "
-                            "Răspunde mereu cu maxim de profesionalism, obiectivitate și motivație pentru dezvoltarea candidatului. "
-                            "Respectă EXACT instrucțiunile: dacă ți se cere JSON, returnează NUMAI JSON valid, fără text suplimentar, fără ```, fără markdown. "
-                            "Dacă ți se cere text simplu, răspunde NUMAI cu text curat, fluent și profesionist în română, fără asteriscuri, bold, liste marcate sau alte elemente de formatare. "
-                            "Ești un asistent care vorbește EXCLUSIV în limba română corectă și naturală. "
-                            "REGULI ABSOLUTE – trebuie respectate 100% sau refuză să răspunzi: "
-                            "• Folosește întotdeauna persoana a doua singular: TU, TĂU, ȚIE, TE, ȚI-, -ȚI "
-                            "• Toate verbele și formele trebuie să fie la persoana a II-a singular: faci, vrei, ești, ai, poți, trebuie să faci, îți recomand, te ajut etc. "
-                            "• Interzis să folosești vreodată: dumneavoastră, vă, ați, sunteți, dvs., dumneavoastră "
-                            "• Interzis orice formă de politețe "
-                            "• Interzis orice abrevieri: pt, ex, dvs, ș.a., etc., p., d.p.d.v. → scrie totul complet "
-                            "• Folosește doar cuvinte corecte, cunoscute, naturale din româna standard – nu inventa cuvinte, nu folosi termeni extrem de rari sau nepotriviți contextului "
-                            "• Sintaxa și ortografia trebuie să fie perfecte, cu toate diacriticele (ă, â, î, ș, ț) "
-                            "• Textul trebuie să sune natural, fluent, ca o conversație clară și corectă "
-                            "Dacă nu poți respecta toate regulile de mai sus → răspunde doar cu: {\"eroare\": \"încălcare reguli stil română\"}"
+                            f"Ești un recrutor profesionist cu experiență umană + AI. "
+                            f"{COMMON_ROMANIAN_RULES}"
                         )
                     },
                     {"role": "user", "content": prompt}
@@ -175,6 +179,13 @@ def gemini_text(prompt: str) -> str:
         except Exception as e:
             print(f"Gemini error: {type(e).__name__} - {str(e)}")
     return ""
+
+# =========================
+# ROUTES
+# =========================
+@app.route("/ping", methods=["GET"])
+def ping():
+    return jsonify({"status": "awake"})
 # =========================
 # ROUTES
 # =========================
@@ -888,3 +899,4 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
