@@ -222,8 +222,7 @@ REGULI STRICTE:
 - NU repeta întrebările
 - Formulează în română profesională, clară, naturală, corectă din punct devedere gramatical si folosind cuvinte comune, fară termeni tehnici.
 - Fără numerotare în textul întrebărilor
-REGULI OBLIGATORII:
-- Folosește EXCLUSIV persoana a II-a singular (tu).
+- Folosește EXCLUSIV persoana a II-a singular (tu) și verbe la persoana a persoana a II-a singular (ex: să cauți, să faci).
 - NU folosi forme de politețe (dumneavoastră, vă, ați).
 - NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
 - Scrie toate cuvintele complet, exact cum ar fi rostite natural.
@@ -284,7 +283,7 @@ Oferă:
 1. Feedback scurt și constructiv (maxim 3 fraze). Acoperă claritate, coerență, concretitudine, impact.
 2. O reformulare profesională completă.
 REGULI OBLIGATORII:
-- Folosește EXCLUSIV persoana a II-a singular (tu).
+- Folosește EXCLUSIV persoana a II-a singular (tu) și verbe la persoana a persoana a II-a singular (ex: să cauți, să faci).
 - NU folosi forme de politețe (dumneavoastră, vă, ați).
 - NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
 - Scrie toate cuvintele complet, exact cum ar fi rostite natural.
@@ -452,7 +451,7 @@ Ești un recrutor profesionist cu experiență umană + AI.
 Analizează compatibilitatea dintre CV și cerințele postului. 
 Oferă procentaj realist (0-100) și feedback detaliat pentru acest fragment.
 REGULI OBLIGATORII:
-- Folosește EXCLUSIV persoana a II-a singular (tu).
+- Folosește EXCLUSIV persoana a II-a singular (tu) și verbe la persoana a persoana a II-a singular (ex: să cauți, să faci).
 - NU folosi forme de politețe (dumneavoastră, vă, ați).
 - NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
 - Scrie toate cuvintele complet, exact cum ar fi rostite natural.
@@ -523,7 +522,7 @@ Generează exact 5 întrebări de interviu relevante, profesionale și bine țin
 Îmbină întrebări comportamentale și de motivare (perspectivă umană) cu întrebări tehnice și de competențe măsurabile (rigurozitate AI).
 Formulează-le în română corectă, naturală și profesională.
 REGULI OBLIGATORII:
-- Folosește EXCLUSIV persoana a II-a singular (tu).
+- Folosește EXCLUSIV persoana a II-a singular (tu) și verbe la persoana a persoana a II-a singular (ex: să cauți, să faci).
 - NU folosi forme de politețe (dumneavoastră, vă, ați).
 - NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
 - Scrie toate cuvintele complet, exact cum ar fi rostite natural.
@@ -541,11 +540,11 @@ Descrierea postului:
     if not parsed or "questions" not in parsed or len(parsed.get("questions", [])) != 5:
         parsed = {
             "questions": [
-                "Povestiți despre experiența dumneavoastră cea mai relevantă pentru acest post.",
-                "Care considerați că sunt principalele dumneavoastră puncte forte în relație cu cerințele rolului?",
-                "Descrieți o situație challenging din carieră și modul în care ați gestionat-o.",
-                "Ce vă motivează să aplicați pentru această poziție în compania noastră?",
-                "Cum abordați învățarea continuă și adaptarea la tehnologii noi?"
+                "Povestește experiența ta cea mai relevantă pentru acest post.",
+                "Care consideri că sunt principalele tale puncte forte în relație cu cerințele rolului?",
+                "Descrie o situație provocatoare din carieră și modul în care ai gestionat-o.",
+                "Ce te motivează să aplici pentru această poziție în compania noastră?",
+                "Cum abordezi învățarea continuă și adaptarea la tehnologii noi?"
             ]
         }
     return api_response(payload=parsed)
@@ -701,7 +700,7 @@ Ești un recrutor profesionist hibrid (experiență umană + analiză AI).
 Evaluează răspunsul candidatului pe o scară de la 1 la 10 și oferă feedback detaliat, obiectiv, constructiv și motivant.
 Îmbină intuiția umană (claritate, autenticitate, impact emoțional) cu rigurozitatea AI (structură, relevanță, exemple concrete).
 REGULI OBLIGATORII:
-- Folosește EXCLUSIV persoana a II-a singular (tu).
+- Folosește EXCLUSIV persoana a II-a singular (tu) și verbe la persoana a persoana a II-a singular (ex: să cauți, să faci).
 - NU folosi forme de politețe (dumneavoastră, vă, ați).
 - NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
 - Scrie toate cuvintele complet, exact cum ar fi rostite natural.
@@ -735,7 +734,7 @@ def generate_report():
 Ești un recrutor profesionist hibrid. Analizează întregul istoric al interviului și generează un raport final obiectiv și profesionist.
 Include un rezumat al performanței candidatului și un scor general (1-10), îmbinând empatia umană cu analiza detaliată AI.
 REGULI OBLIGATORII:
-- Folosește EXCLUSIV persoana a II-a singular (tu).
+- Folosește EXCLUSIV persoana a II-a singular (tu) și verbe la persoana a persoana a II-a singular (ex: să cauți, să faci).
 - NU folosi forme de politețe (dumneavoastră, vă, ați).
 - NU folosi abrevieri de niciun fel (ex: dvs., pt., etc., ș.a.).
 - Scrie toate cuvintele complet, exact cum ar fi rostite natural.
@@ -843,6 +842,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
