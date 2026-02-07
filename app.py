@@ -670,7 +670,7 @@ def evaluate_answer():
     if not question or not answer:
         return api_response(error="Date lipsă", code=400)
 
-   prompt = f"""
+    prompt = f"""
 Ești un recruiter senior cu experiență reală în interviuri.
 
 Evaluează răspunsul candidatului pe TREI dimensiuni distincte (0–10):
@@ -829,6 +829,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
