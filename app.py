@@ -669,6 +669,11 @@ def coach_next():
         Folosește un limbaj profesionist, fluent, natural și empatic.
         Răspuns original:
         {answer}
+        Format dorit:
+        SITUAȚIE: ...
+        SARCINĂ: ...
+        ACȚIUNE: ...
+        REZULTAT: ...
         """
         
         # Folosim gemini_text definit de tine
@@ -850,6 +855,7 @@ Descriere job (opțional – dacă este relevantă):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # fallback 5000 doar local
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
 
 
