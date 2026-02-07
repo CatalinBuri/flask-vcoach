@@ -697,12 +697,12 @@ Răspunsul:
     raw = gemini_text(prompt)
     parsed = safe_json(raw)
     if parsed and all(k in parsed for k in ("claritate", "structura", "relevanta")):
-    c = int(parsed["claritate"])
-    s = int(parsed["structura"])
-    r = int(parsed["relevanta"])
+       c = int(parsed["claritate"])
+       s = int(parsed["structura"])
+       r = int(parsed["relevanta"])
 
-    nota_finala = round(0.30 * c + 0.35 * s + 0.35 * r)
-    parsed["nota_finala"] = nota_finala
+       nota_finala = round(0.30 * c + 0.35 * s + 0.35 * r)
+       parsed["nota_finala"] = nota_finala
     if not parsed or "nota_finala" not in parsed:
         parsed = {
     "claritate": 7,
@@ -829,6 +829,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
