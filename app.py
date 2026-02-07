@@ -830,7 +830,9 @@ Descriere job (opțional – dacă este relevantă):
 # START
 # =========================
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.environ.get("PORT", 5000))  # fallback 5000 doar local
+    app.run(host="0.0.0.0", port=port, debug=False)
+
 
 
 
