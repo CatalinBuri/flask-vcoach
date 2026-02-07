@@ -648,7 +648,6 @@ CV:
 @cross_origin(origins="*", methods=["POST", "OPTIONS"])
 @app.route("/coach-next", methods=["POST", "OPTIONS"])
 def coach_next():
-def coach_next():
     data = request.get_json(force=True)
     answer = data.get("user_answer", "").strip()
     if len(answer.split()) < 5:
@@ -832,6 +831,7 @@ Descriere job (opțional – dacă este relevantă):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # fallback 5000 doar local
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
 
 
