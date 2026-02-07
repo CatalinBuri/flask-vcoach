@@ -666,7 +666,7 @@ def coach_next():
 
         prompt = f"""
         Ești un recrutor profesionist hibrid. Rescrie răspunsul candidatului în structura STAR (Situație, Sarcină, Acțiune, Rezultat), păstrând toate detaliile esențiale.
-        Folosește un limbaj profesionist, fluent, natural și empatic.
+        Folosește un limbaj profesionist, fluent, natural și empatic.Fiecare secțiune (Situație, Sarcină, Acțiune, Rezultat) trebuie să înceapă pe un rând nou, îngroșată.
         Răspuns original:
         {answer}
         Format dorit:
@@ -855,6 +855,7 @@ Descriere job (opțional – dacă este relevantă):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # fallback 5000 doar local
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
 
 
