@@ -651,20 +651,35 @@ CV:
 
 
 @app.route("/coach-next", methods=["POST", "OPTIONS"])
+@cross_origin() # Această adnotare este esențială aici
 def coach_next():
-    data = request.get_json(force=True)
-    answer = data.get("user_answer", "").strip()
-    if len(answer.split()) < 5:
-        return api_response(payload={"star_answer": "Răspunsul este prea scurt pentru a fi restructurat în format STAR."})
+    # Răspunde instantaneu la verificarea browserului (Preflight)
+    if request.method == "OPTIONS":
+        return api_response(code=200)
 
-    prompt = f"""
-Ești un recrutor profesionist hibrid. Rescrie răspunsul candidatului în structura STAR (Situație, Sarcină, Acțiune, Rezultat), păstrând toate detaliile esențiale.
-Folosește un limbaj profesionist, fluent, natural și empatic, care reflectă atât rigurozitatea structurii, cât și autenticitatea umană.
-Răspuns original:
-{answer}
-"""
-    text = clean_text(gemini_text(prompt))
-    return api_response(payload={"star_answer": text})
+    try:
+        data = request.get_json(force=True)
+        answer = data.get("user_answer", "").strip()
+        
+        if len(answer.split()) < 5:
+            return api_response(payload={"star_answer": "Răspunsul este prea scurt pentru a fi restructurat în format STAR."})
+
+        prompt = f"""
+        Ești un recrutor profesionist hibrid. Rescrie răspunsul candidatului în structura STAR (Situație, Sarcină, Acțiune, Rezultat), păstrând toate detaliile esențiale.
+        Folosește un limbaj profesionist, fluent, natural și empatic.
+        Răspuns original:
+        {answer}
+        """
+        
+        # Folosim gemini_text definit de tine
+        ai_response_text = gemini_text(prompt)
+        text = clean_text(ai_response_text)
+        
+        return api_response(payload={"star_answer": text})
+    
+    except Exception as e:
+        print(f"Error in coach-next: {str(e)}")
+        return api_response(error="Eroare procesare STAR", code=500)
 
 
 @app.route("/evaluate-answer", methods=["POST"])
@@ -835,6 +850,7 @@ Descriere job (opțional – dacă este relevantă):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # fallback 5000 doar local
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
 
 
