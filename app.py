@@ -670,24 +670,50 @@ def evaluate_answer():
     if not question or not answer:
         return api_response(error="Date lipsă", code=400)
 
-    prompt = f"""
-Ești un recrutor profesionist hibrid (experiență umană + analiză AI).
-Evaluează răspunsul candidatului pe o scară de la 1 la 10 și oferă feedback detaliat, obiectiv, constructiv și motivant.
-Îmbină intuiția umană (claritate, autenticitate, impact emoțional) cu rigurozitatea AI (structură, relevanță, exemple concrete).
-Returnează NUMAI JSON valid:
-{{"nota_finala": număr_întreg_de_la_1_la_10, "feedback": "feedback text curat și profesionist"}}
+   prompt = f"""
+Ești un recruiter senior cu experiență reală în interviuri.
+
+Evaluează răspunsul candidatului pe TREI dimensiuni distincte (0–10):
+- claritate: cât de ușor se înțelege răspunsul
+- structura: cât de logic și organizat este
+- relevanta: cât de bine răspunde exact la întrebare
+
+Oferă și un feedback scurt, constructiv (max 2 fraze).
+
+Returnează STRICT acest JSON:
+{{
+  "claritate": număr_întreg_0_10,
+  "structura": număr_întreg_0_10,
+  "relevanta": număr_întreg_0_10,
+  "feedback": "text feedback"
+}}
+
 Întrebarea:
 {question}
+
 Răspunsul:
 {answer}
 """
     raw = gemini_text(prompt)
     parsed = safe_json(raw)
+    if parsed and all(k in parsed for k in ("claritate", "structura", "relevanta")):
+    c = int(parsed["claritate"])
+    s = int(parsed["structura"])
+    r = int(parsed["relevanta"])
+
+    nota_finala = round(0.30 * c + 0.35 * s + 0.35 * r)
+    parsed["nota_finala"] = nota_finala
     if not parsed or "nota_finala" not in parsed:
         parsed = {
-            "nota_finala": 7,
-            "feedback": "Răspunsul este solid și demonstrează experiență relevantă. Pentru un impact mai puternic, recomandăm includerea unor rezultate cuantificabile și o structură mai clară (ex: STAR)."
-        }
+    "claritate": 7,
+    "structura": 6,
+    "relevanta": 7,
+    "nota_finala": 7,
+    "feedback": (
+        "Răspunsul este coerent, dar poate fi îmbunătățit printr-o structurare "
+        "mai clară și exemple mai relevante."
+    )
+}
     return api_response(payload={"current_evaluation": parsed})
 
 
@@ -803,6 +829,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
