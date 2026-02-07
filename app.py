@@ -24,8 +24,11 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 USE_GROQ = bool(GROQ_API_KEY)
 
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
-CORS(app)
+CORS(app, resources={r"/*": {
+    "origins": "*",
+    "methods": ["GET", "POST", "OPTIONS"],
+    "allow_headers": ["Content-Type", "Authorization"]
+}})
 Compress(app)
 
 # =========================
@@ -832,6 +835,7 @@ Descriere job (opțional – dacă este relevantă):
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))  # fallback 5000 doar local
     app.run(host="0.0.0.0", port=port, debug=False)
+
 
 
 
