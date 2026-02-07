@@ -645,7 +645,9 @@ CV:
     return api_response(payload=parsed)
 
 
-@app.route("/coach-next", methods=["POST"])
+@cross_origin(origins="*", methods=["POST", "OPTIONS"])
+@app.route("/coach-next", methods=["POST", "OPTIONS"])
+def coach_next():
 def coach_next():
     data = request.get_json(force=True)
     answer = data.get("user_answer", "").strip()
@@ -829,6 +831,7 @@ Descriere job (opțional – dacă este relevantă):
 # =========================
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5000, debug=False)
+
 
 
 
