@@ -4,7 +4,7 @@ import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS, cross_origin
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
 from flask_compress import Compress
 from groq import Groq
 from itertools import zip_longest
