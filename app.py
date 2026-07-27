@@ -96,12 +96,16 @@ def api_response(payload=None, error=None, code=200):
 
 
 def clean_text(text: str) -> str:
-    text = re.sub(r'\s+', ' ', text)
+    if not text:
+        return ""
+    text = re.sub(r'\s+', ' ', str(text))
     text = re.sub(r'[\x00-\x1F]+', '', text)
     return text.strip()
 
 
 def chunk_text(text: str, chunk_size: int = 2000) -> list:
+    if not text:
+        return []
     chunks = []
     start = 0
     while start < len(text):
@@ -117,12 +121,12 @@ def safe_json(text: str):
     text = clean_text(text)
     try:
         return json.loads(text)
-    except:
+    except Exception:
         match = re.search(r"\{.*\}", text, re.S | re.M)
         if match:
             try:
                 return json.loads(match.group(0))
-            except:
+            except Exception:
                 pass
     return None
 
@@ -160,7 +164,8 @@ def gemini_text(prompt: str) -> str:
                     {"role": "user", "parts": [{"text": prompt}]}
                 ],
             )
-            return response.text.strip()
+            if response and hasattr(response, "text") and response.text:
+                return response.text.strip()
         except Exception as e:
             print(f"Gemini error: {type(e).__name__} - {str(e)}")
 
@@ -168,7 +173,7 @@ def gemini_text(prompt: str) -> str:
 
 
 # =========================
-# ROUTES (TOATE CELE 14 ENDPOINTURI)
+# ROUTES (TOATE ENDPOINTURILE)
 # =========================
 
 @app.route("/ping", methods=["GET"])
@@ -176,9 +181,11 @@ def ping():
     return jsonify({"status": "awake"})
 
 
-@app.route("/check-cv-memory", methods=["GET"])
-@cross_origin(origins="*", methods=["POST", "OPTIONS", "GET"])
+@app.route("/check-cv-memory", methods=["GET", "OPTIONS"])
+@cross_origin()
 def check_cv_memory():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
     if MEMORY.get("cv_text") and len(MEMORY["cv_text"].strip()) > 10:
         return api_response(payload={"has_cv": True}, code=200)
     else:
@@ -240,7 +247,7 @@ def coach_generic_eval():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True)
+    data = request.get_json(force=True) or {}
     question = data.get("question", "").strip()
     answer = data.get("user_answer", "").strip()
 
@@ -285,7 +292,7 @@ def process_text():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True)
+    data = request.get_json(force=True) or {}
     text = data.get("text", "").strip()
     if not text:
         return api_response(error="Text lipsă", code=400)
@@ -302,20 +309,22 @@ def analyze_cv_quality():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True)
-    cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
-    cv = clean_text(cv_raw)
-    if not cv:
-        return api_response(error="CV lipsă", code=400)
+    try:
+        data = request.get_json(force=True) or {}
+        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+        cv = clean_text(cv_raw)
+        
+        if not cv:
+            return api_response(error="CV lipsă sau neprocesat", code=400)
 
-    MEMORY["cv_text"] = cv
-    chunks = chunk_text(cv, chunk_size=3000)
+        MEMORY["cv_text"] = cv
+        chunks = chunk_text(cv, chunk_size=3000)
 
-    clarity_scores, relevance_scores, structure_scores = [], [], []
-    concrete_improvements, suggested_rephrasings = [], []
+        clarity_scores, relevance_scores, structure_scores = [], [], []
+        concrete_improvements, suggested_rephrasings = [], []
 
-    for chunk in chunks:
-        prompt_chunk = f"""
+        for chunk in chunks:
+            prompt_chunk = f"""
 You are a senior hybrid recruiter with 10+ years of experience. Analyze ONLY the CV fragment below.
 
 CRITICAL RULES - MUST FOLLOW EXACTLY:
@@ -346,31 +355,41 @@ JSON structure (strict):
 CV fragment:
 {chunk}
 """
-        raw_chunk = gemini_text(prompt_chunk)
-        parsed_chunk = safe_json(raw_chunk)
+            raw_chunk = gemini_text(prompt_chunk)
+            parsed_chunk = safe_json(raw_chunk)
 
-        if not parsed_chunk:
-            parsed_chunk = {
-                "clarity_score": 7, "relevance_score": 7, "structure_score": 7,
-                "concrete_improvements": [], "suggested_rephrasings": []
-            }
+            if not parsed_chunk or not isinstance(parsed_chunk, dict):
+                parsed_chunk = {
+                    "clarity_score": 7, "relevance_score": 7, "structure_score": 7,
+                    "concrete_improvements": [], "suggested_rephrasings": []
+                }
 
-        clarity_scores.append(parsed_chunk.get("clarity_score", 7))
-        relevance_scores.append(parsed_chunk.get("relevance_score", 7))
-        structure_scores.append(parsed_chunk.get("structure_score", 7))
-        concrete_improvements.extend(parsed_chunk.get("concrete_improvements", []))
-        suggested_rephrasings.extend(parsed_chunk.get("suggested_rephrasings", []))
+            clarity_scores.append(parsed_chunk.get("clarity_score", 7))
+            relevance_scores.append(parsed_chunk.get("relevance_score", 7))
+            structure_scores.append(parsed_chunk.get("structure_score", 7))
+            
+            improvements = parsed_chunk.get("concrete_improvements", [])
+            if isinstance(improvements, list):
+                concrete_improvements.extend(improvements)
+                
+            rephrasings = parsed_chunk.get("suggested_rephrasings", [])
+            if isinstance(rephrasings, list):
+                suggested_rephrasings.extend(rephrasings)
 
-    final_payload = {
-        "clarity_score": int(sum(clarity_scores)/len(clarity_scores)) if clarity_scores else 0,
-        "relevance_score": int(sum(relevance_scores)/len(relevance_scores)) if relevance_scores else 0,
-        "structure_score": int(sum(structure_scores)/len(structure_scores)) if structure_scores else 0,
-        "overall_assessment": "CV analysis completed successfully.",
-        "concrete_improvements": concrete_improvements[:10],
-        "suggested_rephrasings": suggested_rephrasings[:10]
-    }
+        final_payload = {
+            "clarity_score": int(sum(clarity_scores) / len(clarity_scores)) if clarity_scores else 7,
+            "relevance_score": int(sum(relevance_scores) / len(relevance_scores)) if relevance_scores else 7,
+            "structure_score": int(sum(structure_scores) / len(structure_scores)) if structure_scores else 7,
+            "overall_assessment": "CV analysis completed successfully.",
+            "concrete_improvements": concrete_improvements[:10],
+            "suggested_rephrasings": suggested_rephrasings[:10]
+        }
 
-    return api_response(payload=final_payload)
+        return api_response(payload=final_payload)
+
+    except Exception as e:
+        print(f"❌ Exception in analyze_cv_quality: {str(e)}")
+        return api_response(error=f"Eroare procesare analiză CV: {str(e)}", code=500)
 
 
 @app.route("/analyze-cv", methods=["POST", "OPTIONS"])
@@ -380,7 +399,7 @@ def analyze_cv():
         return api_response(code=200)
 
     try:
-        data = request.get_json(force=True)
+        data = request.get_json(force=True) or {}
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
         job_raw = data.get("job_text", "").strip()
 
@@ -445,7 +464,7 @@ def generate_questions():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True)
+    data = request.get_json(force=True) or {}
     cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
     job = data.get("job_summary", "").strip()
     cv = clean_text(cv_raw)
@@ -482,7 +501,7 @@ def generate_job_queries():
         return api_response(code=200)
 
     try:
-        data = request.get_json(force=True)
+        data = request.get_json(force=True) or {}
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
         cv_clean = clean_text(cv_raw)
 
@@ -529,7 +548,7 @@ def optimize_linkedin_profile():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True)
+    data = request.get_json(force=True) or {}
     cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
     cv = clean_text(cv_raw)
     if not cv:
@@ -566,7 +585,7 @@ def coach_next():
         return api_response(code=200)
 
     try:
-        data = request.get_json(force=True)
+        data = request.get_json(force=True) or {}
         answer = data.get("user_answer", "").strip()
 
         if len(answer.split()) < 5:
@@ -597,7 +616,7 @@ def evaluate_answer():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True)
+    data = request.get_json(force=True) or {}
     question = data.get("question", "").strip()
     answer = data.get("answer", "").strip()
     if not question or not answer:
@@ -624,7 +643,7 @@ Răspunsul: {answer}
     raw = gemini_text(prompt)
     parsed = safe_json(raw)
 
-    if parsed and all(k in parsed for k in ("claritate", "structura", "relevanta")):
+    if parsed and isinstance(parsed, dict) and all(k in parsed for k in ("claritate", "structura", "relevanta")):
         c, s, r = int(parsed["claritate"]), int(parsed["structura"]), int(parsed["relevanta"])
         parsed["nota_finala"] = round(0.30 * c + 0.35 * s + 0.35 * r)
     else:
@@ -645,7 +664,7 @@ def generate_report():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True)
+    data = request.get_json(force=True) or {}
     history = data.get("history", [])
     if not history:
         return api_response(error="Istoric lipsă", code=400)
@@ -674,7 +693,7 @@ def reformulate_cv_for_job_boards():
         return api_response(code=200)
 
     try:
-        data = request.get_json(force=True)
+        data = request.get_json(force=True) or {}
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
         job_raw = data.get("job_text", "").strip()
 
@@ -707,13 +726,13 @@ Descriere job (opțional): {job_raw}
         parsed = safe_json(raw)
 
         required_keys = ["normalized_titles", "cv_summary_for_job_boards", "core_skills_keywords", "notes_for_candidate"]
-        if not parsed or not all(k in parsed for k in required_keys):
+        if not parsed or not isinstance(parsed, dict) or not all(k in parsed for k in required_keys):
             return api_response(error="AI nu a putut genera un rezultat valid pentru reformularea CV-ului", code=503)
 
         return api_response(payload=parsed)
 
     except Exception as e:
-        return api_response(error="Eroare internă server", code=503)
+        return api_response(error=f"Eroare internă server: {str(e)}", code=503)
 
 
 # =========================
