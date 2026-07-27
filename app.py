@@ -22,6 +22,8 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 USE_GROQ = bool(GROQ_API_KEY)
 
 app = Flask(__name__)
+
+# Configurare CORS globală flexibilă și permisivă
 CORS(app, resources={r"/*": {
     "origins": "*",
     "methods": ["GET", "POST", "OPTIONS"],
@@ -173,7 +175,7 @@ def gemini_text(prompt: str) -> str:
 
 
 # =========================
-# ROUTES (TOATE ENDPOINTURILE)
+# ROUTES
 # =========================
 
 @app.route("/ping", methods=["GET"])
@@ -247,7 +249,7 @@ def coach_generic_eval():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     question = data.get("question", "").strip()
     answer = data.get("user_answer", "").strip()
 
@@ -292,7 +294,7 @@ def process_text():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     text = data.get("text", "").strip()
     if not text:
         return api_response(error="Text lipsă", code=400)
@@ -310,12 +312,12 @@ def analyze_cv_quality():
         return api_response(code=200)
 
     try:
-        data = request.get_json(force=True) or {}
+        data = request.get_json(force=True, silent=True) or {}
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
         cv = clean_text(cv_raw)
-        
+
         if not cv:
-            return api_response(error="CV lipsă sau neprocesat", code=400)
+            return api_response(error="CV lipsă în request sau memorie", code=400)
 
         MEMORY["cv_text"] = cv
         chunks = chunk_text(cv, chunk_size=3000)
@@ -367,11 +369,11 @@ CV fragment:
             clarity_scores.append(parsed_chunk.get("clarity_score", 7))
             relevance_scores.append(parsed_chunk.get("relevance_score", 7))
             structure_scores.append(parsed_chunk.get("structure_score", 7))
-            
+
             improvements = parsed_chunk.get("concrete_improvements", [])
             if isinstance(improvements, list):
                 concrete_improvements.extend(improvements)
-                
+
             rephrasings = parsed_chunk.get("suggested_rephrasings", [])
             if isinstance(rephrasings, list):
                 suggested_rephrasings.extend(rephrasings)
@@ -388,8 +390,8 @@ CV fragment:
         return api_response(payload=final_payload)
 
     except Exception as e:
-        print(f"❌ Exception in analyze_cv_quality: {str(e)}")
-        return api_response(error=f"Eroare procesare analiză CV: {str(e)}", code=500)
+        print(f"❌ Error inside analyze_cv_quality: {str(e)}")
+        return api_response(error=f"Eroare internă server la analiza CV: {str(e)}", code=500)
 
 
 @app.route("/analyze-cv", methods=["POST", "OPTIONS"])
@@ -399,7 +401,7 @@ def analyze_cv():
         return api_response(code=200)
 
     try:
-        data = request.get_json(force=True) or {}
+        data = request.get_json(force=True, silent=True) or {}
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
         job_raw = data.get("job_text", "").strip()
 
@@ -464,7 +466,7 @@ def generate_questions():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
     job = data.get("job_summary", "").strip()
     cv = clean_text(cv_raw)
@@ -501,7 +503,7 @@ def generate_job_queries():
         return api_response(code=200)
 
     try:
-        data = request.get_json(force=True) or {}
+        data = request.get_json(force=True, silent=True) or {}
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
         cv_clean = clean_text(cv_raw)
 
@@ -527,10 +529,10 @@ CV: {cv_clean}
         raw = groq_text(prompt) if USE_GROQ else gemini_text(prompt)
         parsed = safe_json(raw)
 
-        if parsed and parsed.get("status") == "no_clear_match":
+        if parsed and isinstance(parsed, dict) and parsed.get("status") == "no_clear_match":
             return api_response(payload=parsed)
 
-        if not parsed or "queries" not in parsed or not isinstance(parsed["queries"], list) or len(parsed["queries"]) != 7:
+        if not parsed or not isinstance(parsed, dict) or "queries" not in parsed or not isinstance(parsed["queries"], list) or len(parsed["queries"]) != 7:
             return api_response(payload={
                 "status": "no_clear_match",
                 "message": "Experiența candidatului este prea nișată sau formulată într-un mod care nu permite asocierea clară cu roluri standard."
@@ -548,7 +550,7 @@ def optimize_linkedin_profile():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
     cv = clean_text(cv_raw)
     if not cv:
@@ -585,7 +587,7 @@ def coach_next():
         return api_response(code=200)
 
     try:
-        data = request.get_json(force=True) or {}
+        data = request.get_json(force=True, silent=True) or {}
         answer = data.get("user_answer", "").strip()
 
         if len(answer.split()) < 5:
@@ -616,7 +618,7 @@ def evaluate_answer():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     question = data.get("question", "").strip()
     answer = data.get("answer", "").strip()
     if not question or not answer:
@@ -664,7 +666,7 @@ def generate_report():
     if request.method == "OPTIONS":
         return api_response(code=200)
 
-    data = request.get_json(force=True) or {}
+    data = request.get_json(force=True, silent=True) or {}
     history = data.get("history", [])
     if not history:
         return api_response(error="Istoric lipsă", code=400)
@@ -693,7 +695,7 @@ def reformulate_cv_for_job_boards():
         return api_response(code=200)
 
     try:
-        data = request.get_json(force=True) or {}
+        data = request.get_json(force=True, silent=True) or {}
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
         job_raw = data.get("job_text", "").strip()
 
@@ -732,7 +734,7 @@ Descriere job (opțional): {job_raw}
         return api_response(payload=parsed)
 
     except Exception as e:
-        return api_response(error=f"Eroare internă server: {str(e)}", code=503)
+        return api_response(error="Eroare internă server", code=503)
 
 
 # =========================
