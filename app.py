@@ -192,7 +192,7 @@ def clear_memory():
 @app.route("/api/cv-quality", methods=["POST", "OPTIONS"])
 @cross_origin()
 def analyze_cv_quality():
-    """ Auditează CV-ul și oferă scoruri + sugestii de îmbunătățire """
+    """ Auditează CV-ul și oferă scoruri + sugestii de îmbunătățire unice """
     if request.method == "OPTIONS":
         return api_response(code=200)
 
@@ -216,30 +216,31 @@ def analyze_cv_quality():
         chunks = chunk_text(cv, chunk_size=3000)
 
         clarity_scores, relevance_scores, structure_scores = [], [], []
-        concrete_improvements, suggested_rephrasings = [], []
+        raw_improvements, raw_rephrasings = [], []
 
         for chunk in chunks:
             prompt_chunk = f"""
-You are a senior recruiter. Analyze ONLY the CV fragment below in relation to the job requirements (if provided).
+You are a senior recruiter. Analyze ONLY the CV fragment below.
 
 CRITICAL RULES:
-1. Detect the dominant language of the fragment. ALL output MUST be written STRICTLY IN THAT LANGUAGE ONLY.
-2. Do NOT use numbering, prefixes, or bullet points inside array strings.
+1. Output MUST be written STRICTLY IN ROMANIAN.
+2. Provide specific, actionable, distinct recommendations. Do NOT repeat yourself.
 3. For "suggested_rephrasings" use EXACT format: "Original: \"...\", Improved: \"...\""
 4. Return ONLY valid JSON.
 
-Assign scores 0–10:
-- clarity_score: clarity & readability
-- relevance_score: attractiveness to recruiters
-- structure_score: logical flow & organization
-
-JSON structure expected:
+JSON structure:
 {{
   "clarity_score": 8,
   "relevance_score": 7,
   "structure_score": 8,
-  "concrete_improvements": ["suggestion 1", "suggestion 2"],
-  "suggested_rephrasings": ["Original: \"...\", Improved: \"...\""]
+  "concrete_improvements": [
+    "Evidențiază rezultatele obținute folosind metrici și procente.",
+    "Formatează secțiunea de abilități tehnice sub formă de listă structurată.",
+    "Elimină frazele generice și detaliază rolul tău exact în proiecte."
+  ],
+  "suggested_rephrasings": [
+    "Original: \"Am lucrat la proiect\", Improved: \"Am coordonat dezvoltarea modulului X creșterea eficienței cu 15%\""
+  ]
 }}
 
 CV fragment:
@@ -251,8 +252,12 @@ CV fragment:
 
             if not parsed_chunk or not isinstance(parsed_chunk, dict):
                 parsed_chunk = {
-                    "clarity_score": 7, "relevance_score": 7, "structure_score": 7,
-                    "concrete_improvements": ["Adaugă realizări cuantificabile în experiența profesională."],
+                    "clarity_score": 8, "relevance_score": 7, "structure_score": 8,
+                    "concrete_improvements": [
+                        "Adaugă realizări cuantificabile și metrici în experiența profesională.",
+                        "Evidențiază mai bine tehnologiile și uneltele folosite la fiecare job.",
+                        "Optimizează structura secțiunii de profil pentru a fi citită mai ușor."
+                    ],
                     "suggested_rephrasings": []
                 }
 
@@ -260,21 +265,34 @@ CV fragment:
             relevance_scores.append(parsed_chunk.get("relevance_score", 7))
             structure_scores.append(parsed_chunk.get("structure_score", 7))
 
-            improvements = parsed_chunk.get("concrete_improvements", [])
-            if isinstance(improvements, list):
-                concrete_improvements.extend(improvements)
+            imp = parsed_chunk.get("concrete_improvements", [])
+            if isinstance(imp, list):
+                raw_improvements.extend(imp)
 
-            rephrasings = parsed_chunk.get("suggested_rephrasings", [])
-            if isinstance(rephrasings, list):
-                suggested_rephrasings.extend(rephrasings)
+            reph = parsed_chunk.get("suggested_rephrasings", [])
+            if isinstance(reph, list):
+                raw_rephrasings.extend(reph)
+
+        # Eliminăm duplicatele păstrând ordinea (Deduplication)
+        unique_improvements = []
+        for item in raw_improvements:
+            clean_item = clean_text(str(item))
+            if clean_item and clean_item not in unique_improvements:
+                unique_improvements.append(clean_item)
+
+        unique_rephrasings = []
+        for item in raw_rephrasings:
+            clean_item = clean_text(str(item))
+            if clean_item and clean_item not in unique_rephrasings:
+                unique_rephrasings.append(clean_item)
 
         final_payload = {
             "clarity_score": int(sum(clarity_scores) / len(clarity_scores)) if clarity_scores else 7,
             "relevance_score": int(sum(relevance_scores) / len(relevance_scores)) if relevance_scores else 7,
             "structure_score": int(sum(structure_scores) / len(structure_scores)) if structure_scores else 7,
-            "overall_assessment": "CV analysis completed successfully.",
-            "concrete_improvements": concrete_improvements[:10],
-            "suggested_rephrasings": suggested_rephrasings[:10]
+            "overall_assessment": "Analiza CV-ului a fost finalizată cu succes.",
+            "concrete_improvements": unique_improvements[:6],
+            "suggested_rephrasings": unique_rephrasings[:6]
         }
 
         return api_response(payload=final_payload)
