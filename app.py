@@ -188,6 +188,8 @@ def check_cv_memory():
 @app.route("/clear-memory", methods=["POST", "OPTIONS"])
 @cross_origin()
 def clear_memory():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
     MEMORY["cv_text"] = None
     return jsonify({
         "status": "ok",
@@ -195,8 +197,12 @@ def clear_memory():
     })
 
 
-@app.route("/generate-coach-questions", methods=["POST"])
+@app.route("/generate-coach-questions", methods=["POST", "OPTIONS"])
+@cross_origin()
 def generate_coach_questions():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
     prompt = """
 Ești un coach de interviu profesionist.
 Generează EXACT 7 întrebări de interviu GENERALISTE, potrivite pentru ORICE candidat.
@@ -228,8 +234,12 @@ REGULI:
     return api_response(payload=parsed)
 
 
-@app.route("/coach-generic-eval", methods=["POST"])
+@app.route("/coach-generic-eval", methods=["POST", "OPTIONS"])
+@cross_origin()
 def coach_generic_eval():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
     data = request.get_json(force=True)
     question = data.get("question", "").strip()
     answer = data.get("user_answer", "").strip()
@@ -269,8 +279,12 @@ Răspunsul candidatului: {answer}
     return api_response(payload=parsed)
 
 
-@app.route("/process-text", methods=["POST"])
+@app.route("/process-text", methods=["POST", "OPTIONS"])
+@cross_origin()
 def process_text():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
     data = request.get_json(force=True)
     text = data.get("text", "").strip()
     if not text:
@@ -281,8 +295,13 @@ def process_text():
     return api_response(payload={"t": summary})
 
 
-@app.route("/analyze-cv-quality", methods=["POST"])
+@app.route("/analyze-cv-quality", methods=["POST", "OPTIONS"])
+@app.route("/api/cv-quality", methods=["POST", "OPTIONS"])
+@cross_origin()
 def analyze_cv_quality():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
     data = request.get_json(force=True)
     cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
     cv = clean_text(cv_raw)
@@ -354,8 +373,12 @@ CV fragment:
     return api_response(payload=final_payload)
 
 
-@app.route("/analyze-cv", methods=["POST"])
+@app.route("/analyze-cv", methods=["POST", "OPTIONS"])
+@cross_origin()
 def analyze_cv():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
     try:
         data = request.get_json(force=True)
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
@@ -416,8 +439,12 @@ Returnează NUMAI text curat.
         return api_response(error=f"Eroare internă: {str(e)}", code=500)
 
 
-@app.route("/generate-questions", methods=["POST"])
+@app.route("/generate-questions", methods=["POST", "OPTIONS"])
+@cross_origin()
 def generate_questions():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
     data = request.get_json(force=True)
     cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
     job = data.get("job_summary", "").strip()
@@ -448,8 +475,12 @@ Job: {job}
     return api_response(payload=parsed)
 
 
-@app.route("/generate-job-queries", methods=["POST"])
+@app.route("/generate-job-queries", methods=["POST", "OPTIONS"])
+@cross_origin()
 def generate_job_queries():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
     try:
         data = request.get_json(force=True)
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
@@ -492,8 +523,12 @@ CV: {cv_clean}
         return api_response(error=f"Eroare internă server: {str(e)}", code=503)
 
 
-@app.route("/optimize-linkedin-profile", methods=["POST"])
+@app.route("/optimize-linkedin-profile", methods=["POST", "OPTIONS"])
+@cross_origin()
 def optimize_linkedin_profile():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
     data = request.get_json(force=True)
     cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
     cv = clean_text(cv_raw)
@@ -556,8 +591,12 @@ REZULTAT: ...
         return api_response(error="Eroare procesare STAR", code=500)
 
 
-@app.route("/evaluate-answer", methods=["POST"])
+@app.route("/evaluate-answer", methods=["POST", "OPTIONS"])
+@cross_origin()
 def evaluate_answer():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
     data = request.get_json(force=True)
     question = data.get("question", "").strip()
     answer = data.get("answer", "").strip()
@@ -600,8 +639,12 @@ Răspunsul: {answer}
     return api_response(payload={"current_evaluation": parsed})
 
 
-@app.route("/generate-report", methods=["POST"])
+@app.route("/generate-report", methods=["POST", "OPTIONS"])
+@cross_origin()
 def generate_report():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
     data = request.get_json(force=True)
     history = data.get("history", [])
     if not history:
@@ -624,8 +667,12 @@ Istoric interviu: {json.dumps(history)}
     return api_response(payload=parsed)
 
 
-@app.route("/reformulate-cv-for-job-boards", methods=["POST"])
+@app.route("/reformulate-cv-for-job-boards", methods=["POST", "OPTIONS"])
+@cross_origin()
 def reformulate_cv_for_job_boards():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
     try:
         data = request.get_json(force=True)
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
