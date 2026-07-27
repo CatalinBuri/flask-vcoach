@@ -219,40 +219,38 @@ def clear_memory():
 
 # === RUTA NOUĂ: SCRAPE JOB DESCRIPTION DIN URL ===
 @app.route("/api/scrape-job", methods=["POST", "OPTIONS"])
-@cross_origin()
+@cross_origin(origins="*", methods=["POST", "OPTIONS"], allow_headers=["Content-Type", "Authorization"])
 def scrape_job():
-  if request.method == "OPTIONS":
-    return api_response(code=200)
+    # Răspunde direct la verificarea preflight pe care o face browserul
+    if request.method == "OPTIONS":
+        return "", 200
 
-  data = request.get_json(force=True) or {}
-  job_url = data.get("url")
+    try:
+        data = request.get_json(force=True) or {}
+        job_url = data.get("url")
 
-  if not job_url:
-    return jsonify({"error": "URL-ul este obligatoriu!"}), 400
+        if not job_url:
+            return jsonify({"error": "URL-ul este obligatoriu!"}), 400
 
-  try:
-    jina_endpoint = f"[https://r.jina.ai/](https://r.jina.ai/){job_url}"
-    headers = {"Accept": "application/json", "X-With-Generated-Alt": "true"}
+        jina_endpoint = f"https://r.jina.ai/{job_url}"
+        headers = {
+            "Accept": "application/json",
+            "X-With-Generated-Alt": "true"
+        }
 
-    response = requests.get(jina_endpoint, headers=headers, timeout=15)
+        response = requests.get(jina_endpoint, headers=headers, timeout=15)
 
-    if response.status_code == 200:
-      extracted_data = response.json()
-      clean_text_extracted = extracted_data.get("data", {}).get("content", "")
-      clean_text_extracted = clean_text_extracted[:4500]
-      return jsonify({"text": clean_text_extracted})
-    else:
-      return (
-          jsonify({
-              "error": (
-                  "Nu s-a putut accesa pagina (posibil blocat de site-ul sursă)."
-              )
-          }),
-          400,
-      )
-  except Exception as e:
-    return jsonify({"error": str(e)}), 500
+        if response.status_code == 200:
+            extracted_data = response.json()
+            clean_text_extracted = extracted_data.get("data", {}).get("content", "")
+            clean_text_extracted = clean_text_extracted[:4500]
+            return jsonify({"text": clean_text_extracted}), 200
+        else:
+            return jsonify({"error": "Nu s-a putut accesa pagina (posibil blocat de site-ul sursă)."}), 400
 
+    except Exception as e:
+        print("Scrape Error:", str(e))
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/generate-coach-questions", methods=["POST"])
 def generate_coach_questions():
