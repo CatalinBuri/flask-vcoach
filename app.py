@@ -138,9 +138,11 @@ def gemini_text(prompt: str) -> str:
                 timeout=12.0
             )
             if res and res.choices and res.choices[0].message.content:
-                return res.choices[0].message.content.strip()
+                text_res = res.choices[0].message.content.strip()
+                if len(text_res) > 5:  # Validare că nu e un răspuns gol
+                    return text_res
         except Exception as e:
-            print(f"⚠️ Groq Rate Limit / Error. Trecem la Gemini...", flush=True)
+            print(f"⚠️ Groq Rate Limit / Error: {e}. Trecem la Gemini...", flush=True)
 
     # 2. Încercăm Gemini
     if gemini_client:
@@ -150,15 +152,17 @@ def gemini_text(prompt: str) -> str:
                 contents=prompt
             )
             if response and hasattr(response, "text") and response.text:
-                return response.text.strip()
+                text_res = response.text.strip()
+                if len(text_res) > 5:
+                    return text_res
         except Exception as e:
-            print(f"⚠️ Gemini Rate Limit / Error. Trecem la OpenRouter...", flush=True)
+            print(f"⚠️ Gemini Rate Limit / Error: {e}. Trecem la OpenRouter...", flush=True)
 
-    # 3. Încercăm OpenRouter (Fallback gratuit de rezervă)[cite: 1]
+    # 3. Încercăm OpenRouter cu prioritizare model gratuit / router dinamic
     if USE_OPENROUTER and openrouter_client:
         try:
             res = openrouter_client.chat.completions.create(
-                model="deepseek/deepseek-chat:free", # Model gratuit performant pe OpenRouter
+                model="openrouter/free",  # Alege automat un model gratuit disponibil și stabil în rețea
                 messages=[
                     {
                         "role": "system",
@@ -170,10 +174,13 @@ def gemini_text(prompt: str) -> str:
                 max_tokens=4096
             )
             if res and res.choices and res.choices[0].message.content:
-                return res.choices[0].message.content.strip()
+                text_res = res.choices[0].message.content.strip()
+                if len(text_res) > 5:
+                    return text_res
         except Exception as e:
             print(f"❌ Eroare OpenRouter: {type(e).__name__} - {str(e)}", flush=True)
 
+    print("❌ Toate serviciile AI (Groq, Gemini, OpenRouter) au eșuat sau au returnat răspunsuri goale.", flush=True)
     return ""
 
 
