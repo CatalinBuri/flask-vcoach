@@ -5,6 +5,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS, cross_origin
 from dotenv import load_dotenv
 from google import genai
+from google.genai import types
 from flask_compress import Compress
 from groq import Groq
 from itertools import zip_longest
@@ -34,12 +35,12 @@ MEMORY = {
 # =========================
 # LLM CLIENTS CONFIG
 # =========================
-gemini_model = None
+gemini_client = None
 if GEMINI_API_KEY:
     try:
-        genai.configure(api_key=GEMINI_API_KEY)
-        gemini_model = genai.GenerativeModel("gemini-1.5-flash")
-        print("✅ Gemini API configurat cu succes (gemini-1.5-flash).")
+        # SDK-ul oficial modern Google GenAI
+        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        print("✅ Gemini API configurat cu succes (google-genai Client).")
     except Exception as e:
         print(f"❌ Eroare la configurarea Gemini API: {str(e)}")
 
@@ -95,11 +96,14 @@ def chunk_text(text: str, chunk_size: int = 3000) -> list:
 def safe_json(text: str):
     if not text:
         return None
-    text = clean_text(text)
+    # Eliminăm blocurile de tip ```json ... ```
+    text_clean = re.sub(r'```(?:json)?\n?', '', text)
+    text_clean = text_clean.replace('```', '').strip()
+    
     try:
-        return json.loads(text)
+        return json.loads(text_clean)
     except Exception:
-        match = re.search(r"\{.*\}", text, re.S | re.M)
+        match = re.search(r"\{.*\}", text_clean, re.S | re.M)
         if match:
             try:
                 return json.loads(match.group(0))
@@ -108,8 +112,9 @@ def safe_json(text: str):
     return None
 
 
-def ask_ai(prompt: str) -> str:
+def ask_ai(prompt: str, force_json: bool = False) -> str:
     """ Funcție unificată de interogare LLM cu fallback (Groq -> Gemini) """
+    
     # 1. Încercare cu Groq (dacă există API Key)
     if USE_GROQ and groq_client:
         try:
@@ -125,14 +130,27 @@ def ask_ai(prompt: str) -> str:
                 temperature=0.2,
                 max_tokens=4096,
             )
-            return res.choices[0].message.content.strip()
+            val = res.choices[0].message.content.strip()
+            if val:
+                return val
         except Exception as e:
             print(f"❌ Groq error: {str(e)}")
 
-    # 2. Încercare cu Gemini
-    if gemini_model:
+    # 2. Încercare cu Gemini SDK NOU (gemini-2.5-flash)
+    if gemini_client:
         try:
-            response = gemini_model.generate_content(prompt)
+            config = None
+            if force_json:
+                config = types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
+            
+            response = gemini_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=prompt,
+                config=config
+            )
+            
             if response and hasattr(response, "text") and response.text:
                 return response.text.strip()
         except Exception as e:
@@ -159,7 +177,7 @@ def handle_global_exception(e):
 
 
 # =========================
-# ALL ENDPOINTS
+# TOATE ENDPOINT-URILE (INTEGRAL)
 # =========================
 
 @app.route("/", methods=["GET"])
@@ -235,11 +253,10 @@ JSON structure:
   "structure_score": 8,
   "concrete_improvements": [
     "Evidențiază rezultatele obținute folosind metrici și procente.",
-    "Formatează secțiunea de abilități tehnice sub formă de listă structurată.",
-    "Elimină frazele generice și detaliază rolul tău exact în proiecte."
+    "Formatează secțiunea de abilități tehnice sub formă de listă structurată."
   ],
   "suggested_rephrasings": [
-    "Original: \"Am lucrat la proiect\", Improved: \"Am coordonat dezvoltarea modulului X creșterea eficienței cu 15%\""
+    "Original: \"Am lucrat la proiect\", Improved: \"Am coordonat dezvoltarea modulului X crescând eficiența cu 15%\""
   ]
 }}
 
@@ -247,23 +264,15 @@ CV fragment:
 {chunk}
 {context_extra}
 """
-            raw_chunk = ask_ai(prompt_chunk)
+            raw_chunk = ask_ai(prompt_chunk, force_json=True)
             parsed_chunk = safe_json(raw_chunk)
 
             if not parsed_chunk or not isinstance(parsed_chunk, dict):
-                parsed_chunk = {
-                    "clarity_score": 8, "relevance_score": 7, "structure_score": 8,
-                    "concrete_improvements": [
-                        "Adaugă realizări cuantificabile și metrici în experiența profesională.",
-                        "Evidențiază mai bine tehnologiile și uneltele folosite la fiecare job.",
-                        "Optimizează structura secțiunii de profil pentru a fi citită mai ușor."
-                    ],
-                    "suggested_rephrasings": []
-                }
+                continue
 
-            clarity_scores.append(parsed_chunk.get("clarity_score", 7))
-            relevance_scores.append(parsed_chunk.get("relevance_score", 7))
-            structure_scores.append(parsed_chunk.get("structure_score", 7))
+            clarity_scores.append(parsed_chunk.get("clarity_score", 8))
+            relevance_scores.append(parsed_chunk.get("relevance_score", 8))
+            structure_scores.append(parsed_chunk.get("structure_score", 8))
 
             imp = parsed_chunk.get("concrete_improvements", [])
             if isinstance(imp, list):
@@ -273,7 +282,7 @@ CV fragment:
             if isinstance(reph, list):
                 raw_rephrasings.extend(reph)
 
-        # Eliminăm duplicatele păstrând ordinea (Deduplication)
+        # Eliminăm duplicatele păstrând ordinea
         unique_improvements = []
         for item in raw_improvements:
             clean_item = clean_text(str(item))
@@ -287,11 +296,15 @@ CV fragment:
                 unique_rephrasings.append(clean_item)
 
         final_payload = {
-            "clarity_score": int(sum(clarity_scores) / len(clarity_scores)) if clarity_scores else 7,
-            "relevance_score": int(sum(relevance_scores) / len(relevance_scores)) if relevance_scores else 7,
-            "structure_score": int(sum(structure_scores) / len(structure_scores)) if structure_scores else 7,
+            "clarity_score": int(sum(clarity_scores) / len(clarity_scores)) if clarity_scores else 8,
+            "relevance_score": int(sum(relevance_scores) / len(relevance_scores)) if relevance_scores else 8,
+            "structure_score": int(sum(structure_scores) / len(structure_scores)) if structure_scores else 8,
             "overall_assessment": "Analiza CV-ului a fost finalizată cu succes.",
-            "concrete_improvements": unique_improvements[:6],
+            "concrete_improvements": unique_improvements[:6] if unique_improvements else [
+                "Adaugă realizări cuantificabile și metrici în experiența profesională.",
+                "Evidențiază mai bine tehnologiile și uneltele folosite la fiecare job.",
+                "Optimizează structura secțiunii de profil pentru a fi citită mai ușor."
+            ],
             "suggested_rephrasings": unique_rephrasings[:6]
         }
 
@@ -329,14 +342,14 @@ def analyze_cv():
         for cv_chunk, job_chunk in zip_longest(cv_chunks, job_chunks, fillvalue=""):
             prompt_chunk = f"""
 Ești un recruiter profesionist. Analizează potrivirea dintre CV și cerințele postului.
-Returnează un procent de compatibilitate realist (0-100) și un feedback în format JSON:
+Returnează un procent de compatibilitate realist (0-100) și un feedback în format JSON STRICT:
 
-{{"compatibility_percent": int, "feedback_markdown": "text feedback"}}
+{{"compatibility_percent": 80, "feedback_markdown": "text feedback"}}
 
 CV: {cv_chunk}
 Job: {job_chunk}
 """
-            raw_chunk = ask_ai(prompt_chunk)
+            raw_chunk = ask_ai(prompt_chunk, force_json=True)
             parsed_chunk = safe_json(raw_chunk) or {
                 "compatibility_percent": 75,
                 "feedback_markdown": "CV-ul conține experiențe relevante pentru cerințele menționate."
@@ -348,7 +361,7 @@ Job: {job_chunk}
         combined_feedback = "\n\n".join(chunk_feedbacks)
 
         final_prompt = f"""
-Sintetizează feedback-ul următor într-un raport clar și bine structurat în limba dominantă a textului:
+Sintetizează feedback-ul următor într-un raport clar și bine structurat în limba română:
 {combined_feedback}
 """
         res_final = ask_ai(final_prompt)
@@ -364,6 +377,40 @@ Sintetizează feedback-ul următor într-un raport clar și bine structurat în 
 
     except Exception as e:
         return api_response(error=f"Eroare internă la potrivirea CV-ului: {str(e)}", code=500)
+
+
+@app.route("/reframe-cv", methods=["POST", "OPTIONS"])
+@app.route("/api/reframe-cv", methods=["POST", "OPTIONS"])
+@cross_origin()
+def reframe_cv():
+    """ Rescrie și optimizează textul din CV pentru a corespunde descrierii jobului """
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+        job_raw = data.get("job_description") or data.get("job_text") or ""
+
+        if not cv_raw:
+            return api_response(error="CV-ul este necesar pentru optimizare.", code=400)
+
+        prompt = f"""
+Ești un expert ATS și Resume Writer. Optimizează și rescrie punctele din CV pentru a evidenția abilitățile relevante pentru job.
+
+CV:
+{clean_text(cv_raw)[:4000]}
+
+JOB DESCRIPTION:
+{clean_text(job_raw)[:4000]}
+
+Răspunde în limba română sub formă de Markdown structurat, împărțit pe secțiuni (Experiență, Abilități, Sumar).
+"""
+        reframed_text = ask_ai(prompt)
+        return api_response(payload={"reframed_cv": reframed_text})
+
+    except Exception as e:
+        return api_response(error=f"Eroare la optimizarea CV-ului: {str(e)}", code=500)
 
 
 @app.route("/generate-cover-letter", methods=["POST", "OPTIONS"])
@@ -384,9 +431,6 @@ def generate_cover_letter():
         prompt = f"""
 Ești un expert în scrierea scrisorilor de intenție (Cover Letters).
 Creează o scrisoare de intenție adaptată perfect pentru jobul descris, bazată pe experiența din CV.
-
-Limbă: Folosește limba în care este redactat anunțul de job.
-Formatați rezultatul în text curat.
 
 CV:
 {clean_text(cv_raw)[:3000]}
@@ -424,7 +468,7 @@ Returnează STRICT un JSON valid cu următoarea structură:
 {{
   "questions": [
     {{"id": 1, "question": "întrebare...", "category": "Tehnic / Comportamental"}},
-    ...
+    {{"id": 2, "question": "întrebare...", "category": "Tehnic / Comportamental"}}
   ]
 }}
 
@@ -434,7 +478,7 @@ CV:
 JOB:
 {clean_text(job_raw)[:3000]}
 """
-        raw_res = ask_ai(prompt)
+        raw_res = ask_ai(prompt, force_json=True)
         parsed = safe_json(raw_res) or {
             "questions": [
                 {"id": 1, "question": "Descrie cel mai complex proiect din experiența ta recentă.", "category": "Experiență"},
