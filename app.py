@@ -3,16 +3,21 @@ import json
 import re
 import io
 import fitz  # PyMuPDF pentru parsare PDF
-import pytesseract
 from PIL import Image
 from flask import Flask, request, jsonify
 from flask_cors import CORS, cross_origin
 from dotenv import load_dotenv
 from google import genai
-import orjson
 from flask_compress import Compress
 from groq import Groq
 from itertools import zip_longest
+
+# Încercăm importul pytesseract, dar adăugăm un flag de siguranță
+try:
+    import pytesseract
+    HAS_PYTESSERACT = True
+except ImportError:
+    HAS_PYTESSERACT = False
 
 # =========================
 # CONFIG
@@ -27,7 +32,7 @@ USE_GROQ = bool(GROQ_API_KEY)
 
 app = Flask(__name__)
 
-# Configurare CORS globală flexibilă și permisivă
+# Configurare CORS globală flexibilă
 CORS(app, resources={r"/*": {
     "origins": "*",
     "methods": ["GET", "POST", "OPTIONS"],
@@ -90,15 +95,12 @@ def groq_text(prompt: str) -> str:
 # UTILS
 # =========================
 def api_response(payload=None, error=None, code=200):
-    return app.response_class(
-        orjson.dumps({
-            "status": "ok" if not error else "error",
-            "payload": payload,
-            "error": error
-        }),
-        status=code,
-        mimetype="application/json"
-    )
+    """Răspuns standardizat folosind jsonify din Flask (fără dependențe de orjson)."""
+    return jsonify({
+        "status": "ok" if not error else "error",
+        "payload": payload,
+        "error": error
+    }), code
 
 
 def clean_text(text: str) -> str:
@@ -179,7 +181,7 @@ def gemini_text(prompt: str) -> str:
 
 
 # =========================
-# NEW / ADDED ENDPOINTS (PARSING & OCR)
+# PARSING & OCR ENDPOINTS
 # =========================
 
 @app.route("/api/parse-pdf", methods=["POST", "OPTIONS"])
@@ -215,12 +217,15 @@ def parse_pdf():
 @app.route("/api/process-ocr", methods=["POST", "OPTIONS"])
 @cross_origin()
 def process_ocr():
-    """Extrage textul dintr-o imagine decupată folosind Tesseract OCR."""
+    """Extrage textul dintr-o imagine folosind Tesseract OCR, protejat împotriva lipsa Tesseract în OS."""
     if request.method == "OPTIONS":
         return api_response(code=200)
 
     if 'image' not in request.files:
         return api_response(error="Nicio imagine furnizată", code=400)
+
+    if not HAS_PYTESSERACT:
+        return api_response(error="Librăria pytesseract nu este instalată.", code=500)
 
     try:
         img_file = request.files['image']
@@ -229,11 +234,11 @@ def process_ocr():
         extracted_text = pytesseract.image_to_string(image)
         return api_response(payload={"text": clean_text(extracted_text)})
     except Exception as e:
-        return api_response(error=f"Eroare procesare OCR: {str(e)}", code=500)
+        return api_response(error="Motorul OCR Tesseract nu este configurat pe server. Vă rugăm să încărcați un fișier PDF direct.", code=500)
 
 
 # =========================
-# EXISTING ROUTES & ALIASED API ENDPOINTS
+# CORE APPLICATION ENDPOINTS
 # =========================
 
 @app.route("/ping", methods=["GET"])
@@ -258,10 +263,7 @@ def clear_memory():
     if request.method == "OPTIONS":
         return api_response(code=200)
     MEMORY["cv_text"] = None
-    return jsonify({
-        "status": "ok",
-        "payload": {"message": "Memoria CV a fost ștearsă cu succes"}
-    })
+    return api_response(payload={"message": "Memoria CV a fost ștearsă cu succes"})
 
 
 @app.route("/generate-coach-questions", methods=["POST", "OPTIONS"])
@@ -388,24 +390,18 @@ def analyze_cv_quality():
 You are a senior hybrid recruiter with 10+ years of experience. Analyze ONLY the CV fragment below.
 
 CRITICAL RULES - MUST FOLLOW EXACTLY:
-1. Detect the dominant language of the fragment. ALL output (scores, concrete_improvements, suggested_rephrasings) MUST be written STRICTLY IN THAT LANGUAGE ONLY.
-2. If the fragment is in English -> ALL output MUST BE IN ENGLISH ONLY. NEVER output Romanian sentences or prefixes like "Asigură", "Implementează", "Am realizat", "Nou:", etc.
-3. Do NOT use numbering, prefixes, "Improvement 1:", "Rephrasing 1:", "1.", or bullet points inside the output array strings.
-4. For "suggested_rephrasings" use EXACT format:
-   "Original: \"exact original phrase\", Improved: \"better version\""
-5. Return ONLY valid JSON — nothing else.
+1. Detect the dominant language of the fragment. ALL output MUST be written STRICTLY IN THAT LANGUAGE ONLY.
+2. If the fragment is in English -> ALL output MUST BE IN ENGLISH ONLY.
+3. Do NOT use numbering or prefixes like "1.", "Improvement 1:" inside the output array strings.
+4. For "suggested_rephrasings" use EXACT format: "Original: \"...\", Improved: \"...\""
+5. Return ONLY valid JSON.
 
-Assign scores 0–10:
-- clarity_score: clarity & readability
-- relevance_score: attractiveness to recruiters
-- structure_score: logical flow & organization
-
-JSON structure (strict):
+JSON structure:
 {{
   "clarity_score": int,
   "relevance_score": int,
   "structure_score": int,
-  "concrete_improvements": ["suggestion with example...", ...],
+  "concrete_improvements": ["suggestion...", ...],
   "suggested_rephrasings": [
     "Original: \"...\", Improved: \"...\"",
     ...
@@ -810,7 +806,7 @@ Descriere job (opțional): {job_raw}
 
 
 # =========================
-# START
+# RUN SERVER
 # =========================
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
