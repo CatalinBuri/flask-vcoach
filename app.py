@@ -301,16 +301,17 @@ def analyze_cv_quality():
         chunks = chunk_text(cv, chunk_size=3000)
 
         clarity_scores, relevance_scores, structure_scores = [], [], []
-        concrete_improvements, suggested_rephrasings = [], []
+        concrete_improvements, suggested_rephrasings, ats_keywords = [], [], []
 
+        # BUCLĂ BINE DEFINITĂ PENTRU FIECARE FRAGMENT DIN CV
         for chunk in chunks:
             prompt_chunk = f"""
-You are a senior hybrid recruiter. Analyze ONLY the CV fragment below.
+You are a senior ATS & Recruitment Specialist. Analyze the CV fragment.
 
 CRITICAL RULES:
-1. Target Output Language: STRICTLY {target_lang}.
-2. Do NOT use numbering or prefixes like "1.", "Improvement 1:" inside output array strings.
-3. For "suggested_rephrasings" use EXACT format: "Original: \"...\", Improved: \"...\""
+1. Output language: STRICTLY {target_lang}.
+2. Keep "concrete_improvements" EXTREMELY COMPACT and actionable (maximum 3 bullet points in total, max 15 words per point).
+3. Extract top 5 essential ATS Keywords / Hard Skills that must be present in the CV.
 4. Return ONLY valid JSON.
 
 JSON structure:
@@ -318,7 +319,8 @@ JSON structure:
   "clarity_score": int,
   "relevance_score": int,
   "structure_score": int,
-  "concrete_improvements": ["suggestion...", ...],
+  "ats_keywords": ["Keyword1", "Keyword2", "Keyword3", "Keyword4", "Keyword5"],
+  "concrete_improvements": ["Short suggestion 1", "Short suggestion 2", "Short suggestion 3"],
   "suggested_rephrasings": ["Original: \"...\", Improved: \"...\""]
 }}
 
@@ -331,28 +333,39 @@ CV fragment:
             if not parsed_chunk or not isinstance(parsed_chunk, dict):
                 parsed_chunk = {
                     "clarity_score": 7, "relevance_score": 7, "structure_score": 7,
-                    "concrete_improvements": [], "suggested_rephrasings": []
+                    "ats_keywords": [], "concrete_improvements": [], "suggested_rephrasings": []
                 }
 
             clarity_scores.append(parsed_chunk.get("clarity_score", 7))
             relevance_scores.append(parsed_chunk.get("relevance_score", 7))
             structure_scores.append(parsed_chunk.get("structure_score", 7))
 
+            # Colectăm cuvintele cheie ATS
+            keywords = parsed_chunk.get("ats_keywords", [])
+            if isinstance(keywords, list):
+                ats_keywords.extend(keywords)
+
+            # Colectăm sugestiile compacte
             improvements = parsed_chunk.get("concrete_improvements", [])
             if isinstance(improvements, list):
                 concrete_improvements.extend(improvements)
 
+            # Colectăm reformulările
             rephrasings = parsed_chunk.get("suggested_rephrasings", [])
             if isinstance(rephrasings, list):
                 suggested_rephrasings.extend(rephrasings)
+
+        # Eliminăm duplicatele din cuvintele cheie păstrând ordinea
+        unique_ats_keywords = list(dict.fromkeys(ats_keywords))
 
         final_payload = {
             "clarity_score": int(sum(clarity_scores) / len(clarity_scores)) if clarity_scores else 7,
             "relevance_score": int(sum(relevance_scores) / len(relevance_scores)) if relevance_scores else 7,
             "structure_score": int(sum(structure_scores) / len(structure_scores)) if structure_scores else 7,
             "overall_assessment": "CV analysis completed successfully.",
-            "concrete_improvements": concrete_improvements[:10],
-            "suggested_rephrasings": suggested_rephrasings[:10]
+            "ats_keywords": unique_ats_keywords[:8],             # Maxim 8 cuvinte cheie unice
+            "concrete_improvements": concrete_improvements[:4],   # Maxim 4 sugestii scurte (compact)
+            "suggested_rephrasings": suggested_rephrasings[:4]     # Maxim 4 exemple de reformulare
         }
 
         return api_response(payload=final_payload)
