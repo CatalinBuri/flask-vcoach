@@ -67,14 +67,6 @@ def clean_text(text: str) -> str:
     text = re.sub(r'\n{3,}', '\n\n', text)
     return text.strip()
 
-def truncate_text(text: str, max_chars: int = 3500) -> str:
-    """Trunchiază textul pentru a evita erorile de tip 413 Request Too Large la Groq/API-uri."""
-    if not text:
-        return ""
-    if len(text) > max_chars:
-        return text[:max_chars] + "\n[...Text trunchiat pentru limită de tokeni...]"
-    return text
-
 def safe_json(raw_text: str) -> dict:
     if not raw_text:
         return {}
@@ -122,7 +114,6 @@ def call_huggingface(prompt: str) -> str:
         return ""
     try:
         from huggingface_hub import InferenceClient
-        # Folosim un model alternativ actual care suportă chat completion gratuit pe Inference API
         client = InferenceClient(token=HF_API_KEY)
         
         response = client.chat_completion(
@@ -138,9 +129,6 @@ def call_huggingface(prompt: str) -> str:
     return ""
 
 def gemini_text(prompt: str) -> str:
-    # Aplicăm o siguranță de trunchiere globală pe prompt ca să nu depășim 6000 tokeni
-    safe_prompt = truncate_text(prompt, max_chars=12000)
-
     # 1. Încercăm Groq
     if USE_GROQ and groq_client:
         try:
@@ -151,10 +139,10 @@ def gemini_text(prompt: str) -> str:
                         "role": "system",
                         "content": (
                             "Ești un asistent AI profesionist specializat în resurse umane, optimizare CV-uri și interviuri. "
-                            "Răspunde STRICT în formatul solicitat (JSON valid când se cere JSON)."
+                            "Răspunde STRICT în limba cerută în prompt și în formatul solicitat (JSON valid când se cere JSON)."
                         )
                     },
-                    {"role": "user", "content": safe_prompt}
+                    {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
                 max_tokens=4096,
@@ -172,7 +160,7 @@ def gemini_text(prompt: str) -> str:
         try:
             response = gemini_client.models.generate_content(
                 model=MODEL_NAME,
-                contents=safe_prompt
+                contents=prompt
             )
             if response and hasattr(response, "text") and response.text:
                 text_res = response.text.strip()
@@ -184,7 +172,7 @@ def gemini_text(prompt: str) -> str:
     # 3. Încercăm Hugging Face (Ultimul fallback)
     if USE_HF:
         try:
-            text_res = call_huggingface(safe_prompt)
+            text_res = call_huggingface(prompt)
             if text_res and len(text_res) > 5:
                 return text_res
         except Exception as e:
@@ -258,13 +246,10 @@ def analyze_cv_quality():
 
     try:
         data = request.get_json(force=True, silent=True) or {}
-        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
-        job_raw = data.get("job_description") or data.get("job_text") or MEMORY.get("job_description") or ""
+        cv = clean_text(data.get("cv_text") or MEMORY.get("cv_text") or "")
+        job = clean_text(data.get("job_description") or data.get("job_text") or MEMORY.get("job_description") or "")
         target_lang = data.get("target_language") or data.get("language") or "ro"
         
-        cv = truncate_text(clean_text(cv_raw), 3000)
-        job = truncate_text(clean_text(job_raw), 2000)
-
         if not cv:
             return api_response(error="CV lipsă.", code=400)
 
@@ -272,10 +257,14 @@ def analyze_cv_quality():
         if job:
             MEMORY["job_description"] = job
 
+        # Limităm lungimea doar în prompt ca să nu dăm eroare 413 la Groq, păstrând integral limba cerută
+        cv_snippet = cv[:3000]
+        job_snippet = job[:2000]
+
         if job:
             prompt = f"""
 Ești un recruiter senior și expert în sisteme ATS. Analizează CV-ul în raport direct cu Descrierea Jobului.
-Limba de răspuns: STRICT {target_lang}.
+Limba de răspuns: STRICT {target_lang}. (Toate textele din JSON trebuie să fie în limba {target_lang}).
 Răspunde EXCLUSIV cu un obiect JSON valid:
 {{
   "clarity_score": 8,
@@ -287,14 +276,14 @@ Răspunde EXCLUSIV cu un obiect JSON valid:
   "suggested_rephrasings": ["Exemplu"]
 }}
 CV:
-{cv}
+{cv_snippet}
 DESCRIERE JOB:
-{job}
+{job_snippet}
 """
         else:
             prompt = f"""
 Ești un recruiter senior. Analizează structura și calitatea acestui CV.
-Limba de răspuns: STRICT {target_lang}.
+Limba de răspuns: STRICT {target_lang}. (Toate textele din JSON trebuie să fie în limba {target_lang}).
 Răspunde EXCLUSIV cu un obiect JSON valid:
 {{
   "clarity_score": 8,
@@ -306,7 +295,7 @@ Răspunde EXCLUSIV cu un obiect JSON valid:
   "suggested_rephrasings": ["Exemplu"]
 }}
 CV:
-{cv}
+{cv_snippet}
 """
 
         raw_res = gemini_text(prompt)
@@ -336,15 +325,16 @@ def match_job():
 
     try:
         data = request.get_json(force=True, silent=True) or {}
-        cv = truncate_text(clean_text(data.get("cv_text") or MEMORY.get("cv_text") or ""), 3000)
-        job_desc = truncate_text(clean_text(data.get("job_description") or MEMORY.get("job_description") or ""), 2000)
+        cv = clean_text(data.get("cv_text") or MEMORY.get("cv_text") or "")
+        job_desc = clean_text(data.get("job_description") or MEMORY.get("job_description") or "")
         target_lang = data.get("target_language") or data.get("language") or "ro"
 
         if not cv or not job_desc:
             return api_response(error="CV-ul și Descrierea Jobului sunt necesare.", code=400)
 
         prompt = f"""
-Compară CV-ul cu Descrierea Jobului. Limba de răspuns: STRICT {target_lang}.
+Compară CV-ul cu Descrierea Jobului. 
+Limba de răspuns: STRICT {target_lang}. (Toate câmpurile text din JSON vor fi în limba {target_lang}).
 Returnează DOAR un obiect JSON valid:
 {{
   "match_score": 75,
@@ -353,9 +343,9 @@ Returnează DOAR un obiect JSON valid:
   "recommendations": ["recomandare1"]
 }}
 CV:
-{cv}
+{cv[:3000]}
 JOB DESCRIPTION:
-{job_desc}
+{job_desc[:2000]}
 """
         raw_res = gemini_text(prompt)
         parsed = safe_json(raw_res) or {}
@@ -381,12 +371,14 @@ def interview_question():
 
     try:
         data = request.get_json(force=True, silent=True) or {}
-        user_answer = truncate_text(data.get("user_answer", ""), 1500)
+        user_answer = data.get("user_answer", "")
         role = data.get("role", "Software Developer")
         target_lang = data.get("target_language") or data.get("language") or "ro"
 
         prompt = f"""
-Ești un recrutator pentru rolul: {role}. Limba: STRICT {target_lang}. Răspuns candidat: "{user_answer}"
+Ești un recrutator pentru rolul: {role}. 
+Limba de răspuns: STRICT {target_lang}. 
+Răspuns candidat: "{user_answer[:1500]}"
 Returnează DOAR un obiect JSON valid:
 {{
   "feedback": "Evaluare...",
@@ -417,10 +409,10 @@ def translate():
 
     try:
         data = request.get_json(force=True, silent=True) or {}
-        text = truncate_text(data.get("text") or MEMORY.get("cv_text") or "", 3000)
+        text = data.get("text") or MEMORY.get("cv_text") or ""
         target_lang = data.get("target_language") or data.get("language") or "en"
 
-        prompt = f"Translate into {target_lang} maintaining a formal tone:\n\n{text}"
+        prompt = f"Translate into {target_lang} maintaining a formal tone:\n\n{text[:3000]}"
         translated_text = gemini_text(prompt)
 
         payload = {
@@ -441,8 +433,8 @@ def rephrase():
 
     try:
         data = request.get_json(force=True, silent=True) or {}
-        cv_text = truncate_text(data.get("text") or MEMORY.get("cv_text") or "", 3000)
-        job_desc = truncate_text(data.get("job_description") or MEMORY.get("job_description") or "", 2000)
+        cv_text = data.get("text") or MEMORY.get("cv_text") or ""
+        job_desc = data.get("job_description") or MEMORY.get("job_description") or ""
         target_lang = data.get("target_language") or data.get("language") or "ro"
 
         if not cv_text:
@@ -463,10 +455,10 @@ Returnează DOAR un obiect JSON valid cu structura:
 }}
 
 CV ORIGINAL:
-{cv_text}
+{cv_text[:3000]}
 
 DESCRIERE JOB:
-{job_desc}
+{job_desc[:2000]}
 """
         else:
             prompt = f"""
@@ -481,7 +473,7 @@ Returnează DOAR un obiect JSON valid cu structura:
 }}
 
 CV ORIGINAL:
-{cv_text}
+{cv_text[:3000]}
 """
 
         raw_res = gemini_text(prompt)
@@ -513,17 +505,18 @@ def generate_summary():
 
     try:
         data = request.get_json(force=True, silent=True) or {}
-        cv = truncate_text(clean_text(data.get("cv_text") or MEMORY.get("cv_text") or ""), 3000)
+        cv = clean_text(data.get("cv_text") or MEMORY.get("cv_text") or "")
         target_lang = data.get("target_language") or data.get("language") or "ro"
 
         prompt = f"""
-Creează 3 opțiuni scurte de rezumat profesional. Limba: STRICT {target_lang}.
+Creează 3 opțiuni scurte de rezumat profesional. 
+Limba de răspuns: STRICT {target_lang}.
 Returnează DOAR un obiect JSON valid:
 {{
   "summaries": ["Opțiunea 1...", "Opțiunea 2...", "Opțiunea 3..."]
 }}
 CV:
-{cv}
+{cv[:3000]}
 """
         raw_res = gemini_text(prompt)
         parsed = safe_json(raw_res)
@@ -546,14 +539,15 @@ def generate_cover_letter():
 
     try:
         data = request.get_json(force=True, silent=True) or {}
-        cv = truncate_text(clean_text(data.get("cv_text") or MEMORY.get("cv_text") or ""), 2500)
-        job_desc = truncate_text(clean_text(data.get("job_description") or MEMORY.get("job_description") or ""), 1500)
+        cv = clean_text(data.get("cv_text") or MEMORY.get("cv_text") or "")
+        job_desc = clean_text(data.get("job_description") or MEMORY.get("job_description") or "")
         target_lang = data.get("target_language") or data.get("language") or "ro"
 
         prompt = f"""
-Creează o scrisoare de intenție profesională adaptată. Limba: STRICT {target_lang}.
-CV: {cv}
-Job: {job_desc}
+Creează o scrisoare de intenție profesională adaptată. 
+Limba de răspuns: STRICT {target_lang}.
+CV: {cv[:2500]}
+Job: {job_desc[:1500]}
 """
         cover_letter_text = gemini_text(prompt)
         payload = {
