@@ -38,7 +38,7 @@ MEMORY = {
 gemini_client = None
 if GEMINI_API_KEY:
     try:
-        # SDK-ul oficial modern Google GenAI
+        # SDK-ul oficial modern Google GenAI Client
         gemini_client = genai.Client(api_key=GEMINI_API_KEY)
         print("✅ Gemini API configurat cu succes (google-genai Client).")
     except Exception as e:
@@ -47,6 +47,12 @@ if GEMINI_API_KEY:
 groq_client = None
 if USE_GROQ:
     try:
+        # Curățăm variabilele de mediu proxy pentru a preveni eroarea 'proxies' în Groq SDK
+        os.environ.pop("HTTP_PROXY", None)
+        os.environ.pop("HTTPS_PROXY", None)
+        os.environ.pop("http_proxy", None)
+        os.environ.pop("https_proxy", None)
+
         groq_client = Groq(api_key=GROQ_API_KEY)
         print("✅ Groq Client pregătit.")
     except Exception as e:
@@ -115,7 +121,7 @@ def safe_json(text: str):
 def ask_ai(prompt: str, force_json: bool = False) -> str:
     """ Funcție unificată de interogare LLM cu fallback (Groq -> Gemini) """
     
-    # 1. Încercare cu Groq (dacă există API Key)
+    # 1. Încercare cu Groq (dacă există API Key și clientul e inițializat)
     if USE_GROQ and groq_client:
         try:
             res = groq_client.chat.completions.create(
@@ -173,6 +179,7 @@ def add_cors_headers(response):
 @app.errorhandler(Exception)
 def handle_global_exception(e):
     print(f"🔥 Unhandled Server Exception: {str(e)}")
+    # Ne asigurăm că erorile unhandled primesc totuși antete CORS pentru debugging
     return api_response(error=f"A apărut o eroare pe server: {str(e)}", code=500)
 
 
