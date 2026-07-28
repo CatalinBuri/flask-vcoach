@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: flask-vcoach
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "gunicorn -w 2 --timeout 120 -b 0.0.0.0:$PORT app:app"
+    aptables:
+      - tesseract-ocr
