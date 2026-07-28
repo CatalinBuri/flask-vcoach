@@ -114,20 +114,20 @@ def call_huggingface(prompt: str) -> str:
     if not HF_API_KEY:
         return ""
     try:
-        headers = {"Authorization": f"Bearer {HF_API_KEY}"}
-        payload = {
-            "inputs": prompt,
-            "parameters": {"max_new_tokens": 2048, "temperature": 0.2, "return_full_text": False}
-        }
-        response = requests.post(HF_MODEL_URL, headers=headers, json=payload, timeout=15.0)
-        if response.status_code == 200:
-            res_json = response.json()
-            if isinstance(res_json, list) and len(res_json) > 0:
-                return res_json[0].get("generated_text", "").strip()
-            elif isinstance(res_json, dict):
-                return res_json.get("generated_text", "").strip()
+        from huggingface_hub import InferenceClient
+        # Folosim un client modern cu modelul Mistral (sau alt model disponibil pe Inference API)
+        client = InferenceClient(token=HF_API_KEY)
+        
+        response = client.chat_completion(
+            model="mistralai/Mistral-7B-Instruct-v0.2",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=2048,
+            temperature=0.2
+        )
+        if response and response.choices:
+            return response.choices[0].message.content.strip()
     except Exception as e:
-        print(f"⚠️ Eroare Hugging Face: {e}", flush=True)
+        print(f"⚠️ Eroare Hugging Face Hub: {e}", flush=True)
     return ""
 
 def gemini_text(prompt: str) -> str:
