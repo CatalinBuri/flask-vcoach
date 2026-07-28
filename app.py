@@ -18,7 +18,7 @@ MEMORY = {
 }
 
 # ==========================================
-# 1. INIȚIALIZARE CLIENT AI (Groq & Gemini)
+# 1. INIȚIALIZARE CLIENȚI AI (Groq, Gemini & OpenRouter)
 # ==========================================
 
 groq_client = None
@@ -45,6 +45,22 @@ if GEMINI_API_KEY:
         print("✅ Gemini ready | model:", MODEL_NAME, flush=True)
     except Exception as e:
         print(f"⚠️ Gemini nu a putut fi inițializat: {e}", flush=True)
+
+openrouter_client = None
+USE_OPENROUTER = False
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+
+if OPENROUTER_API_KEY:
+    try:
+        from openai import OpenAI
+        openrouter_client = OpenAI(
+            api_key=OPENROUTER_API_KEY,
+            base_url="https://openrouter.ai/api/v1"
+        )
+        USE_OPENROUTER = True
+        print("✅ OpenRouter ready", flush=True)
+    except Exception as e:
+        print(f"⚠️ OpenRouter nu a putut fi inițializat: {e}", flush=True)
 
 
 # ==========================================
@@ -102,6 +118,7 @@ def api_response(payload=None, error=None, code=200):
     return jsonify(base_response), code
 
 def gemini_text(prompt: str) -> str:
+    # 1. Încercăm Groq
     if USE_GROQ and groq_client:
         try:
             res = groq_client.with_options(max_retries=0).chat.completions.create(
@@ -123,8 +140,9 @@ def gemini_text(prompt: str) -> str:
             if res and res.choices and res.choices[0].message.content:
                 return res.choices[0].message.content.strip()
         except Exception as e:
-            print(f"⚠️ Groq Rate Limit / Error. Fallback pe Gemini...", flush=True)
+            print(f"⚠️ Groq Rate Limit / Error. Trecem la Gemini...", flush=True)
 
+    # 2. Încercăm Gemini
     if gemini_client:
         try:
             response = gemini_client.models.generate_content(
@@ -134,7 +152,27 @@ def gemini_text(prompt: str) -> str:
             if response and hasattr(response, "text") and response.text:
                 return response.text.strip()
         except Exception as e:
-            print(f"❌ Eroare Gemini: {type(e).__name__} - {str(e)}", flush=True)
+            print(f"⚠️ Gemini Rate Limit / Error. Trecem la OpenRouter...", flush=True)
+
+    # 3. Încercăm OpenRouter (Fallback gratuit de rezervă)[cite: 1]
+    if USE_OPENROUTER and openrouter_client:
+        try:
+            res = openrouter_client.chat.completions.create(
+                model="deepseek/deepseek-chat:free", # Model gratuit performant pe OpenRouter
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Ești un asistent AI în HR. Răspunde STRICT în format JSON valid când se cere acest lucru."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=4096
+            )
+            if res and res.choices and res.choices[0].message.content:
+                return res.choices[0].message.content.strip()
+        except Exception as e:
+            print(f"❌ Eroare OpenRouter: {type(e).__name__} - {str(e)}", flush=True)
 
     return ""
 
@@ -150,7 +188,8 @@ def index():
         "success": True,
         "service": "vCoach AI API",
         "groq_active": USE_GROQ,
-        "gemini_active": gemini_client is not None
+        "gemini_active": gemini_client is not None,
+        "openrouter_active": USE_OPENROUTER
     }), 200
 
 @app.route("/ping", methods=["GET", "HEAD"])
@@ -376,9 +415,6 @@ def translate():
     except Exception as e:
         return api_response(error=f"Eroare traducere: {str(e)}", code=500)
 
-# ------------------------------------------
-# RUTA 6 CORECTATĂ: REFRAME / REPHRASE (Ține cont și de Job Description)
-# ------------------------------------------
 @app.route("/rephrase", methods=["POST", "OPTIONS"], endpoint="rephrase_root")
 @app.route("/api/rephrase", methods=["POST", "OPTIONS"], endpoint="rephrase_api")
 @cross_origin()
@@ -395,7 +431,6 @@ def rephrase():
         if not cv_text:
             return api_response(error="Textul CV-ului pentru reformulare lipsește.", code=400)
 
-        # Prompt inteligent care rescrie și adaptează CV-ul în funcție de jobul furnizat
         if job_desc:
             prompt = f"""
 Ești un expert în scriere de CV-uri și optimizare ATS. 
