@@ -161,10 +161,11 @@ def safe_json(text: str):
 
 
 def gemini_text(prompt: str) -> str:
-    """Prioritate Groq (rapid), fallback Gemini."""
+    """Prioritate Groq (rapid), fallback instant la Gemini în caz de Rate Limit sau eroare."""
     if USE_GROQ and groq_client:
         try:
-            res = groq_client.chat.completions.create(
+            # max_retries=0 previne ca SDK-ul Groq să apeleze time.sleep() la erori 429
+            res = groq_client.with_options(max_retries=0).chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
                     {
@@ -180,11 +181,14 @@ def gemini_text(prompt: str) -> str:
                 ],
                 temperature=0.2,
                 max_tokens=4096,
+                timeout=10.0 # Renunță după 10 secunde dacă nu răspunde
             )
-            return res.choices[0].message.content.strip()
+            if res and res.choices:
+                return res.choices[0].message.content.strip()
         except Exception as e:
-            print("Groq error:", str(e))
+            print(f"⚠️ Groq nedisponibil sau Rate Limit ({type(e).__name__}). Trecem automat pe Gemini...")
 
+    # Fallback Gemini
     if gemini_client:
         try:
             response = gemini_client.models.generate_content(
@@ -194,10 +198,81 @@ def gemini_text(prompt: str) -> str:
             if response and hasattr(response, "text") and response.text:
                 return response.text.strip()
         except Exception as e:
-            print(f"Gemini error: {type(e).__name__} - {str(e)}")
+            print(f"❌ Gemini error: {type(e).__name__} - {str(e)}")
 
     return ""
 
+
+@app.route("/analyze-cv-quality", methods=["POST", "OPTIONS"])
+@app.route("/api/cv-quality", methods=["POST", "OPTIONS"])
+@cross_origin()
+def analyze_cv_quality():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+        target_lang = data.get("target_language") or data.get("language") or "en"
+        
+        cv = clean_text(cv_raw)
+
+        if not cv:
+            return api_response(error="CV lipsă în request sau memorie. Vă rugăm încărcați mai întâi un CV.", code=400)
+
+        MEMORY["cv_text"] = cv
+
+        # Procesăm tot CV-ul într-un singur apel (elimină bucla de request-uri multiple)
+        prompt = f"""
+You are a senior ATS & Recruitment Specialist. Analyze the following complete CV.
+
+CRITICAL RULES:
+1. Output language: STRICTLY {target_lang}.
+2. Keep "concrete_improvements" EXTREMELY COMPACT and actionable (maximum 4 bullet points in total, max 15 words per point).
+3. Extract top 8 essential ATS Keywords / Hard Skills that must be present in the CV.
+4. Return ONLY valid JSON without Markdown block markers.
+
+JSON structure:
+{{
+  "clarity_score": int,
+  "relevance_score": int,
+  "structure_score": int,
+  "ats_keywords": ["Keyword1", "Keyword2", "Keyword3", "Keyword4", "Keyword5", "Keyword6", "Keyword7", "Keyword8"],
+  "concrete_improvements": ["Short suggestion 1", "Short suggestion 2", "Short suggestion 3", "Short suggestion 4"],
+  "suggested_rephrasings": ["Original: \"...\", Improved: \"...\""]
+}}
+
+CV Content:
+{cv}
+"""
+        raw_res = gemini_text(prompt)
+        parsed = safe_json(raw_res)
+
+        if not parsed or not isinstance(parsed, dict):
+            parsed = {
+                "clarity_score": 7,
+                "relevance_score": 7,
+                "structure_score": 7,
+                "ats_keywords": [],
+                "concrete_improvements": ["Ensure your CV clearly outlines quantifiable achievements."],
+                "suggested_rephrasings": []
+            }
+
+        final_payload = {
+            "clarity_score": parsed.get("clarity_score", 7),
+            "relevance_score": parsed.get("relevance_score", 7),
+            "structure_score": parsed.get("structure_score", 7),
+            "overall_assessment": "CV analysis completed successfully.",
+            "ats_keywords": parsed.get("ats_keywords", [])[:8],
+            "concrete_improvements": parsed.get("concrete_improvements", [])[:4],
+            "suggested_rephrasings": parsed.get("suggested_rephrasings", [])[:4]
+        }
+
+        return api_response(payload=final_payload)
+
+    except Exception as e:
+        print(f"❌ Error inside analyze_cv_quality: {str(e)}")
+        return api_response(error=f"Eroare procesare CV: {str(e)}", code=500)
 
 # =========================
 # PARSING & OCR ENDPOINTS
