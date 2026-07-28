@@ -434,13 +434,15 @@ def rephrase():
         if job_desc:
             prompt = f"""
 Ești un expert în scriere de CV-uri și optimizare ATS. 
-Rescrie, structurează și refocalizează complet conținutul acestui CV pentru a fi perfect aliniat și optimizat pentru Descrierea Jobului de mai jos. 
-Folosește verbe puternice de acțiune, evidențiază realizările relevante și include cuvintele cheie critice din descrierea postului.
+Rescrie și optimizează complet conținutul acestui CV pentru a fi perfect aliniat cu Descrierea Jobului de mai jos. 
+Folosește verbe puternice de acțiune și include cuvintele cheie critice.
+
+IMPORTANT: Răspunde exclusiv în format HTML curat (folosind tag-uri precum <h3>, <h4>, <p>, <ul>, <li>, <strong>), FĂRĂ blocuri de cod markdown (fără ```html sau ```).
 Limba de răspuns: STRICT {target_lang}.
 
 Returnează DOAR un obiect JSON valid cu structura:
 {{
-  "improved_text": "Textul complet rescris și optimizat al CV-ului..."
+  "improved_text": "<h3>Nume Prenume</h3><p>...</p>..."
 }}
 
 CV ORIGINAL:
@@ -451,12 +453,14 @@ DESCRIERE JOB:
 """
         else:
             prompt = f"""
-Ești un expert în scriere de CV-uri. Îmbunătățește, reformulează și ridică nivelul profesional al acestui CV, organizându-l într-un format clar, cu impact puternic.
+Ești un expert în scriere de CV-uri. Îmbunătățește și reformulează acest CV într-un format clar, cu impact puternic.
+
+IMPORTANT: Răspunde exclusiv în format HTML curat (folosind tag-uri precum <h3>, <h4>, <p>, <ul>, <li>, <strong>), FĂRĂ blocuri de cod markdown (fără ```html sau ```).
 Limba de răspuns: STRICT {target_lang}.
 
 Returnează DOAR un obiect JSON valid cu structura:
 {{
-  "improved_text": "Textul optimizat..."
+  "improved_text": "<h3>Nume Prenume</h3><p>...</p>..."
 }}
 
 CV ORIGINAL:
@@ -465,7 +469,15 @@ CV ORIGINAL:
 
         raw_res = gemini_text(prompt)
         parsed = safe_json(raw_res)
+        
+        # Extragem textul și aplicăm o curățare suplimentară de siguranță anti-markdown
         improved = parsed.get("improved_text") if parsed else raw_res
+        if not improved or len(str(improved).strip()) == 0:
+            improved = raw_res
+            
+        # Curățare robustă dacă modelul totuși pune blocuri ```html ... ```
+        improved = re.sub(r'^```(?:html)?\s*', '', str(improved).strip(), flags=re.MULTILINE)
+        improved = re.sub(r'\s*```$', '', improved, flags=re.MULTILINE).strip()
 
         payload = {
             "improved_text": improved,
