@@ -82,7 +82,11 @@ def safe_json(raw_text: str) -> dict:
 def api_response(payload=None, error=None, code=200):
     """Format unitar pentru răspunsurile API."""
     if error:
-        return jsonify({"status": "error", "message": error}), code
+        return jsonify({"status": "error", "message": error, "error": error}), code
+    if isinstance(payload, dict):
+        response_dict = {"status": "success", "data": payload}
+        response_dict.update(payload)
+        return jsonify(response_dict), code
     return jsonify({"status": "success", "data": payload if payload is not None else {}}), code
 
 def gemini_text(prompt: str) -> str:
@@ -125,7 +129,7 @@ def gemini_text(prompt: str) -> str:
 
 
 # ==========================================
-# 3. TOATE RUTELLE API (COMPLETE)
+# 3. TOATE RUTELE API (COMPLETE)
 # ==========================================
 
 @app.route("/", methods=["GET", "HEAD"])
@@ -144,8 +148,8 @@ def ping():
 # ------------------------------------------
 # RUTA 1: UPLOAD CV & TEXT
 # ------------------------------------------
-@app.route("/upload-cv", methods=["POST", "OPTIONS"])
-@app.route("/api/upload-cv", methods=["POST", "OPTIONS"])
+@app.route("/upload-cv", methods=["POST", "OPTIONS"], endpoint="upload_cv_root")
+@app.route("/api/upload-cv", methods=["POST", "OPTIONS"], endpoint="upload_cv_api")
 @cross_origin()
 def upload_cv():
     if request.method == "OPTIONS":
@@ -183,8 +187,8 @@ def upload_cv():
 # ------------------------------------------
 # RUTA 2: ANALIZĂ CALITATE CV (CV Quality)
 # ------------------------------------------
-@app.route("/analyze-cv-quality", methods=["POST", "OPTIONS"])
-@app.route("/api/cv-quality", methods=["POST", "OPTIONS"])
+@app.route("/analyze-cv-quality", methods=["POST", "OPTIONS"], endpoint="analyze_cv_quality_root")
+@app.route("/api/cv-quality", methods=["POST", "OPTIONS"], endpoint="analyze_cv_quality_api")
 @cross_origin()
 def analyze_cv_quality():
     if request.method == "OPTIONS":
@@ -193,7 +197,7 @@ def analyze_cv_quality():
     try:
         data = request.get_json(force=True, silent=True) or {}
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
-        target_lang = data.get("target_language") or data.get("language") or "en"
+        target_lang = data.get("target_language") or data.get("language") or "ro"
         cv = clean_text(cv_raw)
 
         if not cv:
@@ -202,16 +206,17 @@ def analyze_cv_quality():
         MEMORY["cv_text"] = cv
 
         prompt = f"""
-You are a senior ATS Specialist. Analyze this CV.
-Language: STRICTLY {target_lang}.
-Return ONLY valid JSON:
+Ești un specialist ATS. Analizează acest CV.
+Limba de răspuns: STRICTLY {target_lang}.
+
+Returnează DOAR un obiect JSON valid:
 {{
-  "clarity_score": int (1-10),
-  "relevance_score": int (1-10),
-  "structure_score": int (1-10),
-  "ats_keywords": ["Keyword1", "Keyword2", "Keyword3", "Keyword4", "Keyword5", "Keyword6", "Keyword7", "Keyword8"],
-  "concrete_improvements": ["Tip 1", "Tip 2", "Tip 3", "Tip 4"],
-  "suggested_rephrasings": ["Original: ... -> Improved: ..."]
+  "clarity_score": 8,
+  "relevance_score": 7,
+  "structure_score": 8,
+  "ats_keywords": ["Cuvant1", "Cuvant2", "Cuvant3", "Cuvant4", "Cuvant5"],
+  "concrete_improvements": ["Sfat 1", "Sfat 2"],
+  "suggested_rephrasings": ["Rescriere 1"]
 }}
 
 CV:
@@ -220,31 +225,40 @@ CV:
         raw_res = gemini_text(prompt)
         parsed = safe_json(raw_res)
 
-        if not parsed:
-            parsed = {
-                "clarity_score": 7, "relevance_score": 7, "structure_score": 7,
-                "ats_keywords": ["Experience", "Skills", "Management"],
-                "concrete_improvements": ["Add quantifiable metrics to work history."],
-                "suggested_rephrasings": []
-            }
+        clarity = parsed.get("clarity_score") or parsed.get("clarity") or 7
+        relevance = parsed.get("relevance_score") or parsed.get("relevance") or 7
+        structure = parsed.get("structure_score") or parsed.get("structure") or 7
 
-        return api_response(payload={
-            "clarity_score": parsed.get("clarity_score", 7),
-            "relevance_score": parsed.get("relevance_score", 7),
-            "structure_score": parsed.get("structure_score", 7),
-            "overall_assessment": "CV analysis complete.",
-            "ats_keywords": parsed.get("ats_keywords", [])[:8],
-            "concrete_improvements": parsed.get("concrete_improvements", [])[:4],
-            "suggested_rephrasings": parsed.get("suggested_rephrasings", [])[:4]
-        })
+        keywords = parsed.get("ats_keywords") or parsed.get("keywords") or ["Experiență", "Abilități"]
+        improvements = parsed.get("concrete_improvements") or parsed.get("improvements") or ["Adăugați detalii cuantificabile."]
+        rephrasings = parsed.get("suggested_rephrasings") or parsed.get("rephrasings") or []
+
+        payload = {
+            "clarity_score": clarity,
+            "clarity": clarity,
+            "relevance_score": relevance,
+            "relevance": relevance,
+            "structure_score": structure,
+            "structure": structure,
+            "overall_assessment": "Analiza CV-ului a fost finalizată cu succes.",
+            "ats_keywords": keywords,
+            "keywords": keywords,
+            "concrete_improvements": improvements,
+            "improvements": improvements,
+            "suggested_rephrasings": rephrasings,
+            "rephrasings": rephrasings
+        }
+
+        return api_response(payload=payload)
+
     except Exception as e:
         return api_response(error=f"Eroare analiză CV: {str(e)}", code=500)
 
 # ------------------------------------------
 # RUTA 3: POTRIVIRE CV CU JOB (Match / Job Fit)
 # ------------------------------------------
-@app.route("/match-job", methods=["POST", "OPTIONS"])
-@app.route("/api/match-job", methods=["POST", "OPTIONS"])
+@app.route("/match-job", methods=["POST", "OPTIONS"], endpoint="match_job_root")
+@app.route("/api/match-job", methods=["POST", "OPTIONS"], endpoint="match_job_api")
 @cross_origin()
 def match_job():
     if request.method == "OPTIONS":
@@ -254,7 +268,7 @@ def match_job():
         data = request.get_json(force=True, silent=True) or {}
         cv = clean_text(data.get("cv_text") or MEMORY.get("cv_text") or "")
         job_desc = clean_text(data.get("job_description") or MEMORY.get("job_description") or "")
-        target_lang = data.get("target_language") or "en"
+        target_lang = data.get("target_language") or data.get("language") or "ro"
 
         if not cv or not job_desc:
             return api_response(error="Atât CV-ul cât și Descrierea Jobului sunt necesare.", code=400)
@@ -262,10 +276,10 @@ def match_job():
         MEMORY["job_description"] = job_desc
 
         prompt = f"""
-Compare the CV against the Job Description. Output language: STRICTLY {target_lang}.
-Return ONLY valid JSON:
+Compară CV-ul cu Descrierea Iobului. Limba de răspuns: STRICTLY {target_lang}.
+Returnează DOAR un obiect JSON valid:
 {{
-  "match_score": int (1-100),
+  "match_score": 75,
   "matching_skills": ["skill1", "skill2"],
   "missing_skills": ["skill1", "skill2"],
   "recommendations": ["rec1", "rec2"]
@@ -280,20 +294,28 @@ JOB DESCRIPTION:
         raw_res = gemini_text(prompt)
         parsed = safe_json(raw_res) or {
             "match_score": 65,
-            "matching_skills": ["General background"],
-            "missing_skills": ["Specific requirements"],
-            "recommendations": ["Tailor CV bullet points to match job keywords."]
+            "matching_skills": ["Experiență generală"],
+            "missing_skills": ["Cerințe specifice"],
+            "recommendations": ["Ajustați CV-ul cu cuvintele cheie din anunț."]
         }
 
-        return api_response(payload=parsed)
+        payload = {
+            "match_score": parsed.get("match_score", 65),
+            "score": parsed.get("match_score", 65),
+            "matching_skills": parsed.get("matching_skills", []),
+            "missing_skills": parsed.get("missing_skills", []),
+            "recommendations": parsed.get("recommendations", [])
+        }
+
+        return api_response(payload=payload)
     except Exception as e:
         return api_response(error=f"Eroare match-job: {str(e)}", code=500)
 
 # ------------------------------------------
 # RUTA 4: SIMULARE INTERVIU (Interview Simulation)
 # ------------------------------------------
-@app.route("/interview-question", methods=["POST", "OPTIONS"])
-@app.route("/api/interview-question", methods=["POST", "OPTIONS"])
+@app.route("/interview-question", methods=["POST", "OPTIONS"], endpoint="interview_question_root")
+@app.route("/api/interview-question", methods=["POST", "OPTIONS"], endpoint="interview_question_api")
 @cross_origin()
 def interview_question():
     if request.method == "OPTIONS":
@@ -303,36 +325,43 @@ def interview_question():
         data = request.get_json(force=True, silent=True) or {}
         user_answer = data.get("user_answer", "")
         role = data.get("role", "Software Developer")
-        target_lang = data.get("target_language") or "en"
+        target_lang = data.get("target_language") or data.get("language") or "ro"
 
         prompt = f"""
-You are a job interviewer for the role: {role}.
-Language: STRICTLY {target_lang}.
-User's last answer: "{user_answer}"
+Ești un recrutator pentru rolul: {role}.
+Limba de răspuns: STRICTLY {target_lang}.
+Răspunsul anterior al candidatului: "{user_answer}"
 
-Return ONLY valid JSON:
+Returnează DOAR un obiect JSON valid:
 {{
-  "feedback": "Short evaluation of the user's answer.",
-  "score": int (1-10),
-  "next_question": "The next interview question to ask."
+  "feedback": "Scurtă evaluare a răspunsului.",
+  "score": 8,
+  "next_question": "Următoarea întrebare de interviu."
 }}
 """
         raw_res = gemini_text(prompt)
         parsed = safe_json(raw_res) or {
-            "feedback": "Good response. Try to be more specific.",
+            "feedback": "Răspuns bun. Încercați să oferiți un exemplu mai concret.",
             "score": 7,
-            "next_question": "Can you give an example of a challenging project you managed?"
+            "next_question": "Ne puteți oferi un exemplu de proiect dificil pe care l-ați gestionat?"
         }
 
-        return api_response(payload=parsed)
+        payload = {
+            "feedback": parsed.get("feedback", ""),
+            "score": parsed.get("score", 7),
+            "next_question": parsed.get("next_question", ""),
+            "question": parsed.get("next_question", "")
+        }
+
+        return api_response(payload=payload)
     except Exception as e:
         return api_response(error=f"Eroare interviu: {str(e)}", code=500)
 
 # ------------------------------------------
 # RUTA 5: TRADUCERE CV / TEXT (Translate)
 # ------------------------------------------
-@app.route("/translate", methods=["POST", "OPTIONS"])
-@app.route("/api/translate", methods=["POST", "OPTIONS"])
+@app.route("/translate", methods=["POST", "OPTIONS"], endpoint="translate_root")
+@app.route("/api/translate", methods=["POST", "OPTIONS"], endpoint="translate_api")
 @cross_origin()
 def translate():
     if request.method == "OPTIONS":
@@ -341,7 +370,7 @@ def translate():
     try:
         data = request.get_json(force=True, silent=True) or {}
         text = data.get("text") or MEMORY.get("cv_text") or ""
-        target_lang = data.get("target_language") or "en"
+        target_lang = data.get("target_language") or data.get("language") or "en"
 
         if not text:
             return api_response(error="Textul de tradus lipsește.", code=400)
@@ -349,15 +378,21 @@ def translate():
         prompt = f"Translate the following professional resume text into {target_lang}. Maintain formal tone:\n\n{text}"
         translated_text = gemini_text(prompt)
 
-        return api_response(payload={"translated_text": translated_text})
+        payload = {
+            "translated_text": translated_text,
+            "translation": translated_text,
+            "text": translated_text
+        }
+
+        return api_response(payload=payload)
     except Exception as e:
         return api_response(error=f"Eroare traducere: {str(e)}", code=500)
 
 # ------------------------------------------
 # RUTA 6: RESCRIERE / REPHRASE BULLET POINT
 # ------------------------------------------
-@app.route("/rephrase", methods=["POST", "OPTIONS"])
-@app.route("/api/rephrase", methods=["POST", "OPTIONS"])
+@app.route("/rephrase", methods=["POST", "OPTIONS"], endpoint="rephrase_root")
+@app.route("/api/rephrase", methods=["POST", "OPTIONS"], endpoint="rephrase_api")
 @cross_origin()
 def rephrase():
     if request.method == "OPTIONS":
@@ -366,17 +401,17 @@ def rephrase():
     try:
         data = request.get_json(force=True, silent=True) or {}
         bullet_point = data.get("text", "")
-        target_lang = data.get("target_language") or "en"
+        target_lang = data.get("target_language") or data.get("language") or "ro"
 
         if not bullet_point:
             return api_response(error="Textul pentru rescriere lipsește.", code=400)
 
         prompt = f"""
-Improve this resume bullet point using strong action verbs and professional metrics.
-Output language: STRICTLY {target_lang}.
-Return ONLY valid JSON:
+Îmbunătățește acest punct din CV folosind verbe de acțiune și un limbaj profesional.
+Limba de răspuns: STRICTLY {target_lang}.
+Returnează DOAR un obiect JSON valid:
 {{
-  "improved_text": "Rescrisa..."
+  "improved_text": "Rescrierea profesională..."
 }}
 
 Original: {bullet_point}
@@ -385,7 +420,13 @@ Original: {bullet_point}
         parsed = safe_json(raw_res)
         improved = parsed.get("improved_text") if parsed else raw_res
 
-        return api_response(payload={"improved_text": improved})
+        payload = {
+            "improved_text": improved,
+            "rephrased_text": improved,
+            "text": improved
+        }
+
+        return api_response(payload=payload)
     except Exception as e:
         return api_response(error=f"Eroare rephrase: {str(e)}", code=500)
 
