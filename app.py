@@ -142,16 +142,21 @@ def chunk_text(text: str, chunk_size: int = 2000) -> list:
 def safe_json(text: str):
     if not text:
         return None
-    text = clean_text(text)
+    
+    # Încercare de parsare directă
     try:
         return json.loads(text)
     except Exception:
-        match = re.search(r"\{.*\}", text, re.S | re.M)
+        pass
+
+    # Extragere folosind Regex dacă AI-ul a pus Markdown / text extra
+    try:
+        match = re.search(r"\{.*\}", text, re.DOTALL)
         if match:
-            try:
-                return json.loads(match.group(0))
-            except Exception:
-                pass
+            return json.loads(match.group(0))
+    except Exception:
+        pass
+
     return None
 
 
@@ -184,9 +189,7 @@ def gemini_text(prompt: str) -> str:
         try:
             response = gemini_client.models.generate_content(
                 model=MODEL_NAME,
-                contents=[
-                    {"role": "user", "parts": [{"text": prompt}]}
-                ],
+                contents=prompt
             )
             if response and hasattr(response, "text") and response.text:
                 return response.text.strip()
@@ -303,7 +306,6 @@ def analyze_cv_quality():
         clarity_scores, relevance_scores, structure_scores = [], [], []
         concrete_improvements, suggested_rephrasings, ats_keywords = [], [], []
 
-        # BUCLĂ BINE DEFINITĂ PENTRU FIECARE FRAGMENT DIN CV
         for chunk in chunks:
             prompt_chunk = f"""
 You are a senior ATS & Recruitment Specialist. Analyze the CV fragment.
@@ -340,22 +342,18 @@ CV fragment:
             relevance_scores.append(parsed_chunk.get("relevance_score", 7))
             structure_scores.append(parsed_chunk.get("structure_score", 7))
 
-            # Colectăm cuvintele cheie ATS
             keywords = parsed_chunk.get("ats_keywords", [])
             if isinstance(keywords, list):
                 ats_keywords.extend(keywords)
 
-            # Colectăm sugestiile compacte
             improvements = parsed_chunk.get("concrete_improvements", [])
             if isinstance(improvements, list):
                 concrete_improvements.extend(improvements)
 
-            # Colectăm reformulările
             rephrasings = parsed_chunk.get("suggested_rephrasings", [])
             if isinstance(rephrasings, list):
                 suggested_rephrasings.extend(rephrasings)
 
-        # Eliminăm duplicatele din cuvintele cheie păstrând ordinea
         unique_ats_keywords = list(dict.fromkeys(ats_keywords))
 
         final_payload = {
@@ -363,9 +361,9 @@ CV fragment:
             "relevance_score": int(sum(relevance_scores) / len(relevance_scores)) if relevance_scores else 7,
             "structure_score": int(sum(structure_scores) / len(structure_scores)) if structure_scores else 7,
             "overall_assessment": "CV analysis completed successfully.",
-            "ats_keywords": unique_ats_keywords[:8],             # Maxim 8 cuvinte cheie unice
-            "concrete_improvements": concrete_improvements[:4],   # Maxim 4 sugestii scurte (compact)
-            "suggested_rephrasings": suggested_rephrasings[:4]     # Maxim 4 exemple de reformulare
+            "ats_keywords": unique_ats_keywords[:8],
+            "concrete_improvements": concrete_improvements[:4],
+            "suggested_rephrasings": suggested_rephrasings[:4]
         }
 
         return api_response(payload=final_payload)
