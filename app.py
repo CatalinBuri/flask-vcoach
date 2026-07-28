@@ -2,6 +2,7 @@ import os
 import re
 import json
 import traceback
+import requests
 from flask import Flask, request, jsonify
 from flask_cors import CORS, cross_origin
 
@@ -18,7 +19,7 @@ MEMORY = {
 }
 
 # ==========================================
-# 1. INIȚIALIZARE CLIENȚI AI (Groq, Gemini & OpenRouter)
+# 1. INIȚIALIZARE CLIENȚI AI (Groq, Gemini & Hugging Face)
 # ==========================================
 
 groq_client = None
@@ -46,21 +47,13 @@ if GEMINI_API_KEY:
     except Exception as e:
         print(f"⚠️ Gemini nu a putut fi inițializat: {e}", flush=True)
 
-openrouter_client = None
-USE_OPENROUTER = False
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
+# Configurare Hugging Face (Fallback 3)
+HF_API_KEY = os.environ.get("HF_API_KEY")
+HF_MODEL_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
+USE_HF = bool(HF_API_KEY)
 
-if OPENROUTER_API_KEY:
-    try:
-        from openai import OpenAI
-        openrouter_client = OpenAI(
-            api_key=OPENROUTER_API_KEY,
-            base_url="https://openrouter.ai/api/v1"
-        )
-        USE_OPENROUTER = True
-        print("✅ OpenRouter ready", flush=True)
-    except Exception as e:
-        print(f"⚠️ OpenRouter nu a putut fi inițializat: {e}", flush=True)
+if USE_HF:
+    print("✅ Hugging Face ready", flush=True)
 
 
 # ==========================================
@@ -117,6 +110,26 @@ def api_response(payload=None, error=None, code=200):
     base_response["data"] = payload if payload is not None else {}
     return jsonify(base_response), code
 
+def call_huggingface(prompt: str) -> str:
+    if not HF_API_KEY:
+        return ""
+    try:
+        headers = {"Authorization": f"Bearer {HF_API_KEY}"}
+        payload = {
+            "inputs": prompt,
+            "parameters": {"max_new_tokens": 2048, "temperature": 0.2, "return_full_text": False}
+        }
+        response = requests.post(HF_MODEL_URL, headers=headers, json=payload, timeout=15.0)
+        if response.status_code == 200:
+            res_json = response.json()
+            if isinstance(res_json, list) and len(res_json) > 0:
+                return res_json[0].get("generated_text", "").strip()
+            elif isinstance(res_json, dict):
+                return res_json.get("generated_text", "").strip()
+    except Exception as e:
+        print(f"⚠️ Eroare Hugging Face: {e}", flush=True)
+    return ""
+
 def gemini_text(prompt: str) -> str:
     # 1. Încercăm Groq
     if USE_GROQ and groq_client:
@@ -139,7 +152,7 @@ def gemini_text(prompt: str) -> str:
             )
             if res and res.choices and res.choices[0].message.content:
                 text_res = res.choices[0].message.content.strip()
-                if len(text_res) > 5:  # Validare că nu e un răspuns gol
+                if len(text_res) > 5:
                     return text_res
         except Exception as e:
             print(f"⚠️ Groq Rate Limit / Error: {e}. Trecem la Gemini...", flush=True)
@@ -156,31 +169,18 @@ def gemini_text(prompt: str) -> str:
                 if len(text_res) > 5:
                     return text_res
         except Exception as e:
-            print(f"⚠️ Gemini Rate Limit / Error: {e}. Trecem la OpenRouter...", flush=True)
+            print(f"⚠️ Gemini Rate Limit / Error: {e}. Trecem la Hugging Face...", flush=True)
 
-    # 3. Încercăm OpenRouter cu prioritizare model gratuit / router dinamic
-    if USE_OPENROUTER and openrouter_client:
+    # 3. Încercăm Hugging Face (Ultimul fallback)
+    if USE_HF:
         try:
-            res = openrouter_client.chat.completions.create(
-                model="openrouter/free",  # Alege automat un model gratuit disponibil și stabil în rețea
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Ești un asistent AI în HR. Răspunde STRICT în format JSON valid când se cere acest lucru."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.2,
-                max_tokens=4096
-            )
-            if res and res.choices and res.choices[0].message.content:
-                text_res = res.choices[0].message.content.strip()
-                if len(text_res) > 5:
-                    return text_res
+            text_res = call_huggingface(prompt)
+            if text_res and len(text_res) > 5:
+                return text_res
         except Exception as e:
-            print(f"❌ Eroare OpenRouter: {type(e).__name__} - {str(e)}", flush=True)
+            print(f"❌ Eroare Hugging Face: {e}", flush=True)
 
-    print("❌ Toate serviciile AI (Groq, Gemini, OpenRouter) au eșuat sau au returnat răspunsuri goale.", flush=True)
+    print("❌ Toate serviciile AI (Groq, Gemini, Hugging Face) au eșuat.", flush=True)
     return ""
 
 
@@ -196,7 +196,7 @@ def index():
         "service": "vCoach AI API",
         "groq_active": USE_GROQ,
         "gemini_active": gemini_client is not None,
-        "openrouter_active": USE_OPENROUTER
+        "huggingface_active": USE_HF
     }), 200
 
 @app.route("/ping", methods=["GET", "HEAD"])
@@ -477,12 +477,10 @@ CV ORIGINAL:
         raw_res = gemini_text(prompt)
         parsed = safe_json(raw_res)
         
-        # Extragem textul și aplicăm o curățare suplimentară de siguranță anti-markdown
         improved = parsed.get("improved_text") if parsed else raw_res
         if not improved or len(str(improved).strip()) == 0:
             improved = raw_res
             
-        # Curățare robustă dacă modelul totuși pune blocuri ```html ... ```
         improved = re.sub(r'^```(?:html)?\s*', '', str(improved).strip(), flags=re.MULTILINE)
         improved = re.sub(r'\s*```$', '', improved, flags=re.MULTILINE).strip()
 
