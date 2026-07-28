@@ -49,7 +49,7 @@ if GEMINI_API_KEY:
 
 # Configurare Hugging Face (Fallback 3)
 HF_API_KEY = os.environ.get("HF_API_KEY")
-HF_MODEL_URL = "https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2"
+HF_MODEL_URL = "https://api-inference.huggingface.co/models/HuggingFaceH4/zephyr-7b-beta"
 USE_HF = bool(HF_API_KEY)
 
 if USE_HF:
@@ -119,7 +119,7 @@ def call_huggingface(prompt: str) -> str:
         client = InferenceClient(token=HF_API_KEY)
         
         response = client.chat_completion(
-            model="mistralai/Mistral-7B-Instruct-v0.2",
+            model="HuggingFaceH4/zephyr-7b-beta",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=2048,
             temperature=0.2
