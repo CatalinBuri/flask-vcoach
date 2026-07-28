@@ -12,7 +12,7 @@ from flask_compress import Compress
 from groq import Groq
 from itertools import zip_longest
 
-# Încercăm importul pytesseract, dar adăugăm un flag de siguranță
+# Verificare sigură pentru pytesseract
 try:
     import pytesseract
     HAS_PYTESSERACT = True
@@ -33,12 +33,29 @@ USE_GROQ = bool(GROQ_API_KEY)
 app = Flask(__name__)
 
 # Configurare CORS globală flexibilă
-CORS(app, resources={r"/*": {
-    "origins": "*",
-    "methods": ["GET", "POST", "OPTIONS"],
-    "allow_headers": ["Content-Type", "Authorization"]
-}})
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 Compress(app)
+
+# Handler explicit pentru wildcard OPTIONS (pentru a preveni blocajele CORS Preflight)
+@app.before_request
+def handle_preflight():
+    if request.method == "OPTIONS":
+        response = app.make_default_options_response()
+        headers = response.headers
+        headers['Access-Control-Allow-Origin'] = '*'
+        headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+        headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization'
+        return response
+
+# Error handler global: garantează răspuns JSON și headere CORS la orice eroare Python (500)
+@app.errorhandler(Exception)
+def handle_global_exception(e):
+    print(f"🔥 Eroare neprinsă pe server: {str(e)}")
+    return jsonify({
+        "status": "error",
+        "payload": None,
+        "error": f"Eroare internă server: {str(e)}"
+    }), 500
 
 # =========================
 # SHARED MEMORY (SESSION-LIKE)
@@ -95,7 +112,6 @@ def groq_text(prompt: str) -> str:
 # UTILS
 # =========================
 def api_response(payload=None, error=None, code=200):
-    """Răspuns standardizat folosind jsonify din Flask (fără dependențe de orjson)."""
     return jsonify({
         "status": "ok" if not error else "error",
         "payload": payload,
@@ -140,7 +156,7 @@ def safe_json(text: str):
 
 
 def gemini_text(prompt: str) -> str:
-    """Prioritate Groq (mai rapid), fallback Gemini."""
+    """Prioritate Groq (rapid), fallback Gemini."""
     if USE_GROQ and groq_client:
         try:
             res = groq_client.chat.completions.create(
@@ -152,7 +168,7 @@ def gemini_text(prompt: str) -> str:
                             "Ești un recrutor profesionist cu peste 10 ani de experiență. "
                             "Dacă ți se cere JSON, returnează NUMAI JSON valid fără markdown sau alt text. "
                             "Dacă ți se cere text simplu, răspunde curat și profesionist. "
-                            "CRITICAL: Detect and strictly adhere to the source document's native language when giving recommendations."
+                            "CRITICAL: Detect and strictly adhere to the requested target language or source document language."
                         )
                     },
                     {"role": "user", "content": prompt}
@@ -187,7 +203,6 @@ def gemini_text(prompt: str) -> str:
 @app.route("/api/parse-pdf", methods=["POST", "OPTIONS"])
 @cross_origin()
 def parse_pdf():
-    """Extrage textul dintr-un PDF încărcat și îl salvează în MEMORY."""
     if request.method == "OPTIONS":
         return api_response(code=200)
 
@@ -217,7 +232,6 @@ def parse_pdf():
 @app.route("/api/process-ocr", methods=["POST", "OPTIONS"])
 @cross_origin()
 def process_ocr():
-    """Extrage textul dintr-o imagine folosind Tesseract OCR, protejat împotriva lipsa Tesseract în OS."""
     if request.method == "OPTIONS":
         return api_response(code=200)
 
@@ -225,7 +239,7 @@ def process_ocr():
         return api_response(error="Nicio imagine furnizată", code=400)
 
     if not HAS_PYTESSERACT:
-        return api_response(error="Librăria pytesseract nu este instalată.", code=500)
+        return api_response(error="Librăria pytesseract nu este configurată pe server.", code=500)
 
     try:
         img_file = request.files['image']
@@ -234,11 +248,11 @@ def process_ocr():
         extracted_text = pytesseract.image_to_string(image)
         return api_response(payload={"text": clean_text(extracted_text)})
     except Exception as e:
-        return api_response(error="Motorul OCR Tesseract nu este configurat pe server. Vă rugăm să încărcați un fișier PDF direct.", code=500)
+        return api_response(error="Motorul OCR Tesseract nu este instalat pe mediul serverului. Vă rugăm încărcați un fișier PDF.", code=500)
 
 
 # =========================
-# CORE APPLICATION ENDPOINTS
+# CORE ENDPOINTS
 # =========================
 
 @app.route("/ping", methods=["GET"])
@@ -266,104 +280,6 @@ def clear_memory():
     return api_response(payload={"message": "Memoria CV a fost ștearsă cu succes"})
 
 
-@app.route("/generate-coach-questions", methods=["POST", "OPTIONS"])
-@cross_origin()
-def generate_coach_questions():
-    if request.method == "OPTIONS":
-        return api_response(code=200)
-
-    prompt = """
-Ești un coach de interviu profesionist.
-Generează EXACT 7 întrebări de interviu GENERALISTE, potrivite pentru ORICE candidat.
-REGULI:
-- Formulează în română profesională, clară și naturală.
-- Returnează NUMAI JSON valid:
-{
-  "questions": [
-    "întrebare 1", "întrebare 2", "întrebare 3", "întrebare 4", "întrebare 5", "întrebare 6", "întrebare 7"
-  ]
-}
-"""
-    raw = gemini_text(prompt)
-    parsed = safe_json(raw)
-
-    if not parsed or "questions" not in parsed or len(parsed["questions"]) != 7:
-        parsed = {
-            "questions": [
-                "Unde te vezi din punct de vedere profesional peste 5 ani?",
-                "Care consideri că este cel mai mare punct forte al tău?",
-                "În ce domeniu simți că mai ai cel mai mult de crescut?",
-                "Povestește despre o situație dificilă pe care ai gestionat-o la locul de muncă.",
-                "Ce te motivează cel mai mult atunci când lucrezi într-o echipă?",
-                "Cum recepționezi și aplici feedback-ul primit de la colegi sau manageri?",
-                "Care sunt așteptările tale realiste de la următorul rol profesional?"
-            ]
-        }
-
-    return api_response(payload=parsed)
-
-
-@app.route("/coach-generic-eval", methods=["POST", "OPTIONS"])
-@cross_origin()
-def coach_generic_eval():
-    if request.method == "OPTIONS":
-        return api_response(code=200)
-
-    data = request.get_json(force=True, silent=True) or {}
-    question = data.get("question", "").strip()
-    answer = data.get("user_answer", "").strip()
-
-    if not question or not answer:
-        return api_response(error="Întrebare sau răspuns lipsă", code=400)
-
-    if len(answer.split()) < 5:
-        return api_response(payload={
-            "feedback": "Răspunsul este prea scurt pentru o evaluare detaliată.",
-            "improved_answer": "Dezvoltă-ți ideile cu exemple personale pentru a primi feedback complet și o variantă optimizată.",
-            "nota_finala": 4
-        })
-
-    prompt = f"""
-Ești un recrutor senior. Evaluează răspunsul candidatului la o întrebare generalistă de interviu.
-Returnează NUMAI JSON valid:
-{{
-  "feedback": "text feedback (maxim 3 fraze)",
-  "improved_answer": "răspunsul reformulat profesional",
-  "nota_finala": <score>
-}}
-
-Întrebarea: {question}
-Răspunsul candidatului: {answer}
-"""
-    raw = gemini_text(prompt)
-    parsed = safe_json(raw)
-
-    if not parsed or "feedback" not in parsed:
-        parsed = {
-            "feedback": "Răspunsul tău arată potențial și autenticitate. Adaugă un exemplu concret pentru un impact mai mare.",
-            "improved_answer": answer,
-            "nota_finala": 6
-        }
-
-    return api_response(payload=parsed)
-
-
-@app.route("/process-text", methods=["POST", "OPTIONS"])
-@cross_origin()
-def process_text():
-    if request.method == "OPTIONS":
-        return api_response(code=200)
-
-    data = request.get_json(force=True, silent=True) or {}
-    text = data.get("text", "").strip()
-    if not text:
-        return api_response(error="Text lipsă", code=400)
-
-    prompt = f"Realizează un rezumat clar și extrem de profesionist al textului următor:\n{text}"
-    summary = clean_text(gemini_text(prompt))
-    return api_response(payload={"t": summary})
-
-
 @app.route("/analyze-cv-quality", methods=["POST", "OPTIONS"])
 @app.route("/api/cv-quality", methods=["POST", "OPTIONS"])
 @cross_origin()
@@ -374,10 +290,12 @@ def analyze_cv_quality():
     try:
         data = request.get_json(force=True, silent=True) or {}
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+        target_lang = data.get("target_language") or data.get("language") or "en"
+        
         cv = clean_text(cv_raw)
 
         if not cv:
-            return api_response(error="CV lipsă în request sau memorie", code=400)
+            return api_response(error="CV lipsă în request sau memorie. Vă rugăm încărcați mai întâi un CV.", code=400)
 
         MEMORY["cv_text"] = cv
         chunks = chunk_text(cv, chunk_size=3000)
@@ -387,14 +305,13 @@ def analyze_cv_quality():
 
         for chunk in chunks:
             prompt_chunk = f"""
-You are a senior hybrid recruiter with 10+ years of experience. Analyze ONLY the CV fragment below.
+You are a senior hybrid recruiter. Analyze ONLY the CV fragment below.
 
-CRITICAL RULES - MUST FOLLOW EXACTLY:
-1. Detect the dominant language of the fragment. ALL output MUST be written STRICTLY IN THAT LANGUAGE ONLY.
-2. If the fragment is in English -> ALL output MUST BE IN ENGLISH ONLY.
-3. Do NOT use numbering or prefixes like "1.", "Improvement 1:" inside the output array strings.
-4. For "suggested_rephrasings" use EXACT format: "Original: \"...\", Improved: \"...\""
-5. Return ONLY valid JSON.
+CRITICAL RULES:
+1. Target Output Language: STRICTLY {target_lang}.
+2. Do NOT use numbering or prefixes like "1.", "Improvement 1:" inside output array strings.
+3. For "suggested_rephrasings" use EXACT format: "Original: \"...\", Improved: \"...\""
+4. Return ONLY valid JSON.
 
 JSON structure:
 {{
@@ -402,10 +319,7 @@ JSON structure:
   "relevance_score": int,
   "structure_score": int,
   "concrete_improvements": ["suggestion...", ...],
-  "suggested_rephrasings": [
-    "Original: \"...\", Improved: \"...\"",
-    ...
-  ]
+  "suggested_rephrasings": ["Original: \"...\", Improved: \"...\""]
 }}
 
 CV fragment:
@@ -445,7 +359,7 @@ CV fragment:
 
     except Exception as e:
         print(f"❌ Error inside analyze_cv_quality: {str(e)}")
-        return api_response(error=f"Eroare internă server la analiza CV: {str(e)}", code=500)
+        return api_response(error=f"Eroare procesare CV: {str(e)}", code=500)
 
 
 @app.route("/analyze-cv", methods=["POST", "OPTIONS"])
@@ -462,13 +376,13 @@ def analyze_cv():
         language = data.get("language", "auto")
 
         if not cv_raw or not job_raw:
-            return api_response(error="Date lipsă: CV și Job sunt necesare", code=400)
+            return api_response(error="Date lipsă: Atât CV-ul cât și descrierea postului sunt necesare.", code=400)
 
         cv_clean = clean_text(cv_raw)
         job_clean = clean_text(job_raw)
         MEMORY["cv_text"] = cv_clean
 
-        lang_instruction = f"Strictly respond in language: {language}." if language != "auto" else "Respond in the dominant language of the CV."
+        lang_instruction = f"Strictly respond in language: {language}." if language != "auto" else "Respond in the language of the job description."
 
         cv_chunks = chunk_text(cv_clean, chunk_size=3000)
         job_chunks = chunk_text(job_clean, chunk_size=3000)
@@ -537,7 +451,7 @@ def generate_questions():
 
     MEMORY["cv_text"] = cv
 
-    lang_instruction = f"Strictly respond in language: {language}." if language != "auto" else "Respond in the dominant language of the CV."
+    lang_instruction = f"Strictly respond in language: {language}." if language != "auto" else "Respond in the language of the CV."
 
     prompt = f"""
 Ești un recrutor profesionist. {lang_instruction}
@@ -553,12 +467,64 @@ Job: {job}
         "questions": [
             "Povestiți despre experiența dumneavoastră cea mai relevantă pentru acest post.",
             "Care considerați că sunt principalele dumneavoastră puncte forte în relație cu cerințele rolului?",
-            "Descrieți o situație challenging din carieră și modul în care ați gestionat-o.",
-            "Ce vă motivează să aplicați pentru această poziție în compania noastră?",
+            "Descrieți o situație dificilă din carieră și modul în care ați gestionat-o.",
+            "Ce vă motivează să aplicați pentru această poziție?",
             "Cum abordați învățarea continuă și adaptarea la tehnologii noi?"
         ]
     }
     return api_response(payload=parsed)
+
+
+@app.route("/reformulate-cv-for-job-boards", methods=["POST", "OPTIONS"])
+@app.route("/api/reframe-cv", methods=["POST", "OPTIONS"])
+@cross_origin()
+def reformulate_cv_for_job_boards():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+        job_raw = data.get("job_text") or data.get("job_description") or ""
+        language = data.get("language", "auto")
+
+        cv_clean = clean_text(cv_raw)
+        if not cv_clean:
+            return api_response(error="CV lipsă", code=400)
+
+        MEMORY["cv_text"] = cv_clean
+
+        lang_instruction = f"Strictly respond in language: {language}." if language != "auto" else "Detect the language of the CV and respond STRICTLY in that language."
+
+        prompt = f"""
+Ești un expert senior în recrutare și sisteme ATS. {lang_instruction}
+REFORMULEAZĂ CV-ul candidatului.
+
+REGULI STRICTE:
+- Do NOT invent experience or add unmentioned skills.
+
+STRUCTURA DE RĂSPUNS (JSON STRICT):
+{{
+  "normalized_titles": ["Titlu standard 1"],
+  "cv_summary_for_job_boards": "Rezumat profesionist, clar, ATS-friendly (max 120 cuvinte)",
+  "core_skills_keywords": ["keyword ATS 1", "keyword ATS 2"],
+  "notes_for_candidate": "Observații oneste despre limitări sau sugestii"
+}}
+
+CV: {cv_clean}
+Descriere job (opțional): {job_raw}
+"""
+        raw = groq_text(prompt) if USE_GROQ else gemini_text(prompt)
+        parsed = safe_json(raw)
+
+        required_keys = ["normalized_titles", "cv_summary_for_job_boards", "core_skills_keywords", "notes_for_candidate"]
+        if not parsed or not isinstance(parsed, dict) or not all(k in parsed for k in required_keys):
+            return api_response(error="AI nu a putut genera un rezultat valid pentru reformularea CV-ului", code=503)
+
+        return api_response(payload=parsed)
+
+    except Exception as e:
+        return api_response(error="Eroare internă server", code=503)
 
 
 @app.route("/generate-job-queries", methods=["POST", "OPTIONS"])
@@ -645,38 +611,6 @@ CV: {cv}
     return api_response(payload=parsed)
 
 
-@app.route("/coach-next", methods=["POST", "OPTIONS"])
-@cross_origin()
-def coach_next():
-    if request.method == "OPTIONS":
-        return api_response(code=200)
-
-    try:
-        data = request.get_json(force=True, silent=True) or {}
-        answer = data.get("user_answer", "").strip()
-
-        if len(answer.split()) < 5:
-            return api_response(payload={"star_answer": "Răspunsul este prea scurt pentru a fi restructurat în format STAR."})
-
-        prompt = f"""
-Ești un recrutor profesionist. Rescrie răspunsul candidatului în structura STAR (Situație, Sarcină, Acțiune, Rezultat).
-Fiecare secțiune trebuie să înceapă pe un rând nou.
-
-Răspuns original: {answer}
-
-Format dorit:
-SITUAȚIE: ...
-SARCINĂ: ...
-ACȚIUNE: ...
-REZULTAT: ...
-"""
-        ai_response_text = gemini_text(prompt)
-        return api_response(payload={"star_answer": clean_text(ai_response_text)})
-
-    except Exception as e:
-        return api_response(error="Eroare procesare STAR", code=500)
-
-
 @app.route("/evaluate-answer", methods=["POST", "OPTIONS"])
 @cross_origin()
 def evaluate_answer():
@@ -751,58 +685,6 @@ Istoric interviu: {json.dumps(history)}
         "scor_final": 8
     }
     return api_response(payload=parsed)
-
-
-@app.route("/reformulate-cv-for-job-boards", methods=["POST", "OPTIONS"])
-@app.route("/api/reframe-cv", methods=["POST", "OPTIONS"])
-@cross_origin()
-def reformulate_cv_for_job_boards():
-    if request.method == "OPTIONS":
-        return api_response(code=200)
-
-    try:
-        data = request.get_json(force=True, silent=True) or {}
-        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
-        job_raw = data.get("job_text") or data.get("job_description") or ""
-        language = data.get("language", "auto")
-
-        cv_clean = clean_text(cv_raw)
-        if not cv_clean:
-            return api_response(error="CV lipsă", code=400)
-
-        MEMORY["cv_text"] = cv_clean
-
-        lang_instruction = f"Strictly respond in language: {language}." if language != "auto" else "Detect the language of the CV and respond STRICTLY in that language."
-
-        prompt = f"""
-Ești un expert senior în recrutare internațională și sisteme ATS. {lang_instruction}
-REFORMULEAZĂ CV-ul candidatului.
-
-REGULI STRICTE:
-- Do NOT invent experience or add unmentioned skills.
-
-STRUCTURA DE RĂSPUNS (JSON STRICT):
-{{
-  "normalized_titles": ["Titlu standard 1"],
-  "cv_summary_for_job_boards": "Rezumat profesionist, clar, ATS-friendly (max 120 cuvinte)",
-  "core_skills_keywords": ["keyword ATS 1", "keyword ATS 2"],
-  "notes_for_candidate": "Observații oneste despre limitări sau sugestii"
-}}
-
-CV: {cv_clean}
-Descriere job (opțional): {job_raw}
-"""
-        raw = groq_text(prompt) if USE_GROQ else gemini_text(prompt)
-        parsed = safe_json(raw)
-
-        required_keys = ["normalized_titles", "cv_summary_for_job_boards", "core_skills_keywords", "notes_for_candidate"]
-        if not parsed or not isinstance(parsed, dict) or not all(k in parsed for k in required_keys):
-            return api_response(error="AI nu a putut genera un rezultat valid pentru reformularea CV-ului", code=503)
-
-        return api_response(payload=parsed)
-
-    except Exception as e:
-        return api_response(error="Eroare internă server", code=503)
 
 
 # =========================
