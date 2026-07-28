@@ -218,16 +218,24 @@ def analyze_cv_quality():
     try:
         data = request.get_json(force=True, silent=True) or {}
         cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+        job_raw = data.get("job_description") or data.get("job_text") or MEMORY.get("job_description") or ""
         target_lang = data.get("target_language") or data.get("language") or "ro"
+        
         cv = clean_text(cv_raw)
+        job = clean_text(job_raw)
 
         if not cv:
             return api_response(error="CV lipsă. Vă rugăm încărcați un CV.", code=400)
 
         MEMORY["cv_text"] = cv
+        if job:
+            MEMORY["job_description"] = job
 
-        prompt = f"""
-Ești un recrutator și specialist ATS senior. Analizează următorul CV și oferă o evaluare detaliată.
+        # Prompt adaptativ în funcție de prezența Job Description-ului
+        if job:
+            prompt = f"""
+Ești un recruiter senior și expert în sisteme ATS.
+Analizează CV-ul în raport direct cu Descrierea Jobului.
 Limba de răspuns trebuie să fie STRICT: {target_lang}.
 
 Răspunde EXCLUSIV cu un obiect JSON valid având exact această structură:
@@ -235,39 +243,61 @@ Răspunde EXCLUSIV cu un obiect JSON valid având exact această structură:
   "clarity_score": 8,
   "relevance_score": 7,
   "structure_score": 8,
-  "ats_keywords": ["CuvantCheie1", "CuvantCheie2", "CuvantCheie3", "CuvantCheie4"],
-  "concrete_improvements": ["Sfat practic 1", "Sfat practic 2"],
+  "matched_ats_keywords": ["CuvantCheie1_Din_Job_Gasit_In_CV", "CuvantCheie2"],
+  "missing_ats_keywords": ["CuvantCheie_Important_Din_Job_Care_LIPSESTE_In_CV"],
+  "concrete_improvements": ["Sfat practic 1 pentru adaptare pe job", "Sfat practic 2"],
+  "suggested_rephrasings": ["Exemplu rescriere un punct din CV pentru a include cuvinte cheie din job"]
+}}
+
+TEXT CV:
+{cv}
+
+DESCRIERE JOB:
+{job}
+"""
+        else:
+            prompt = f"""
+Ești un recruiter senior. Analizează structura și calitatea generală a acestui CV (fără un job specific de referință).
+Limba de răspuns trebuie să fie STRICT: {target_lang}.
+
+Răspunde EXCLUSIV cu un obiect JSON valid având exact această structură:
+{{
+  "clarity_score": 8,
+  "relevance_score": 6,
+  "structure_score": 8,
+  "detected_skills": ["Skill1_Identificat", "Skill2_Identificat"],
+  "missing_ats_keywords": ["Adăugați un Job Description pentru a genera cuvintele cheie lipsă"],
+  "concrete_improvements": ["Recomandare generală 1", "Recomandare generală 2"],
   "suggested_rephrasings": ["Rescriere exemplu 1"]
 }}
 
 TEXT CV:
 {cv}
 """
+
         raw_res = gemini_text(prompt)
         parsed = safe_json(raw_res)
 
-        clarity = parsed.get("clarity_score") or parsed.get("clarity") or 8
-        relevance = parsed.get("relevance_score") or parsed.get("relevance") or 7
-        structure = parsed.get("structure_score") or parsed.get("structure") or 8
+        clarity = parsed.get("clarity_score") or 8
+        relevance = parsed.get("relevance_score") or (7 if job else 5)
+        structure = parsed.get("structure_score") or 8
 
-        keywords = parsed.get("ats_keywords") or parsed.get("keywords") or ["Management", "Comunicare", "Proiecte"]
-        improvements = parsed.get("concrete_improvements") or parsed.get("improvements") or ["Adăugați rezultate măsurabile pentru rolurile anterioare."]
-        rephrasings = parsed.get("suggested_rephrasings") or parsed.get("rephrasings") or []
+        # Separăm ce are din job vs ce îi lipsește
+        matched_keywords = parsed.get("matched_ats_keywords") or parsed.get("detected_skills") or []
+        missing_keywords = parsed.get("missing_ats_keywords") or []
+        
+        improvements = parsed.get("concrete_improvements") or ["Adăugați rezultate măsurabile."]
+        rephrasings = parsed.get("suggested_rephrasings") or []
 
         payload = {
             "clarity_score": clarity,
-            "clarity": clarity,
             "relevance_score": relevance,
-            "relevance": relevance,
             "structure_score": structure,
-            "structure": structure,
-            "overall_assessment": "Analiza CV-ului a fost finalizată cu succes.",
-            "ats_keywords": keywords,
-            "keywords": keywords,
+            "has_job_context": bool(job),
+            "ats_keywords": matched_keywords,  # Cuvinte găsite
+            "missing_keywords": missing_keywords,  # Cuvinte care LIPSEC din CV (din Job)
             "concrete_improvements": improvements,
-            "improvements": improvements,
-            "suggested_rephrasings": rephrasings,
-            "rephrasings": rephrasings
+            "suggested_rephrasings": rephrasings
         }
 
         return api_response(payload=payload)
