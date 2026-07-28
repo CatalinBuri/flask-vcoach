@@ -21,7 +21,6 @@ MEMORY = {
 # 1. INIȚIALIZARE CLIENT AI (Groq & Gemini)
 # ==========================================
 
-# Groq Setup
 groq_client = None
 USE_GROQ = False
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -35,7 +34,6 @@ if GROQ_API_KEY:
     except Exception as e:
         print(f"⚠️ Groq nu a putut fi inițializat: {e}", flush=True)
 
-# Gemini Setup
 gemini_client = None
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 MODEL_NAME = "gemini-2.5-flash"
@@ -54,7 +52,6 @@ if GEMINI_API_KEY:
 # ==========================================
 
 def clean_text(text: str) -> str:
-    """Curăță textul extras de caractere inutile."""
     if not text:
         return ""
     text = re.sub(r'\r\n|\r', '\n', text)
@@ -63,7 +60,6 @@ def clean_text(text: str) -> str:
     return text.strip()
 
 def safe_json(raw_text: str) -> dict:
-    """Extrage și validează un obiect JSON dintr-un răspuns LLM."""
     if not raw_text:
         return {}
     cleaned = re.sub(r'^```(?:json)?\s*', '', raw_text.strip(), flags=re.MULTILINE)
@@ -81,7 +77,6 @@ def safe_json(raw_text: str) -> dict:
     return {}
 
 def api_response(payload=None, error=None, code=200):
-    """Format unitar și hiper-compatibil pentru răspunsurile API."""
     if error:
         return jsonify({
             "status": "error",
@@ -107,7 +102,6 @@ def api_response(payload=None, error=None, code=200):
     return jsonify(base_response), code
 
 def gemini_text(prompt: str) -> str:
-    """Invocă Groq cu fallback automat pe Gemini."""
     if USE_GROQ and groq_client:
         try:
             res = groq_client.with_options(max_retries=0).chat.completions.create(
@@ -129,7 +123,7 @@ def gemini_text(prompt: str) -> str:
             if res and res.choices and res.choices[0].message.content:
                 return res.choices[0].message.content.strip()
         except Exception as e:
-            print(f"⚠️ Groq Rate Limit / Error ({type(e).__name__}). Fallback pe Gemini...", flush=True)
+            print(f"⚠️ Groq Rate Limit / Error. Fallback pe Gemini...", flush=True)
 
     if gemini_client:
         try:
@@ -146,12 +140,9 @@ def gemini_text(prompt: str) -> str:
 
 
 # ==========================================
-# 3. TOATE RUTELE API (10 RUTE COMPLETE)
+# 3. RUTELE API
 # ==========================================
 
-# ------------------------------------------
-# RUTA 0: STATUS SERVER & PING
-# ------------------------------------------
 @app.route("/", methods=["GET", "HEAD"])
 def index():
     return jsonify({
@@ -166,9 +157,6 @@ def index():
 def ping():
     return "OK", 200
 
-# ------------------------------------------
-# RUTA 1: UPLOAD CV & TEXT
-# ------------------------------------------
 @app.route("/upload-cv", methods=["POST", "OPTIONS"], endpoint="upload_cv_root")
 @app.route("/api/upload-cv", methods=["POST", "OPTIONS"], endpoint="upload_cv_api")
 @cross_origin()
@@ -183,7 +171,7 @@ def upload_cv():
             filename = file.filename.lower()
             if filename.endswith(".pdf"):
                 try:
-                    import fitz  # PyMuPDF
+                    import fitz
                     doc = fitz.open(stream=file.read(), filetype="pdf")
                     for page in doc:
                         text_content += page.get_text()
@@ -205,9 +193,6 @@ def upload_cv():
     except Exception as e:
         return api_response(error=f"Eroare la procesare: {str(e)}", code=500)
 
-# ------------------------------------------
-# RUTA 2: ANALIZĂ CALITATE CV (CV Quality)
-# ------------------------------------------
 @app.route("/analyze-cv-quality", methods=["POST", "OPTIONS"], endpoint="analyze_cv_quality_root")
 @app.route("/api/cv-quality", methods=["POST", "OPTIONS"], endpoint="analyze_cv_quality_api")
 @cross_origin()
@@ -225,89 +210,67 @@ def analyze_cv_quality():
         job = clean_text(job_raw)
 
         if not cv:
-            return api_response(error="CV lipsă. Vă rugăm încărcați un CV.", code=400)
+            return api_response(error="CV lipsă.", code=400)
 
         MEMORY["cv_text"] = cv
         if job:
             MEMORY["job_description"] = job
 
-        # Prompt adaptativ în funcție de prezența Job Description-ului
         if job:
             prompt = f"""
-Ești un recruiter senior și expert în sisteme ATS.
-Analizează CV-ul în raport direct cu Descrierea Jobului.
-Limba de răspuns trebuie să fie STRICT: {target_lang}.
-
-Răspunde EXCLUSIV cu un obiect JSON valid având exact această structură:
+Ești un recruiter senior și expert în sisteme ATS. Analizează CV-ul în raport direct cu Descrierea Jobului.
+Limba de răspuns: STRICT {target_lang}.
+Răspunde EXCLUSIV cu un obiect JSON valid:
 {{
   "clarity_score": 8,
   "relevance_score": 7,
   "structure_score": 8,
-  "matched_ats_keywords": ["CuvantCheie1_Din_Job_Gasit_In_CV", "CuvantCheie2"],
-  "missing_ats_keywords": ["CuvantCheie_Important_Din_Job_Care_LIPSESTE_In_CV"],
-  "concrete_improvements": ["Sfat practic 1 pentru adaptare pe job", "Sfat practic 2"],
-  "suggested_rephrasings": ["Exemplu rescriere un punct din CV pentru a include cuvinte cheie din job"]
+  "matched_ats_keywords": ["Cuvant1"],
+  "missing_ats_keywords": ["CuvantLipsește"],
+  "concrete_improvements": ["Sfat 1"],
+  "suggested_rephrasings": ["Exemplu"]
 }}
-
-TEXT CV:
+CV:
 {cv}
-
 DESCRIERE JOB:
 {job}
 """
         else:
             prompt = f"""
-Ești un recruiter senior. Analizează structura și calitatea generală a acestui CV (fără un job specific de referință).
-Limba de răspuns trebuie să fie STRICT: {target_lang}.
-
-Răspunde EXCLUSIV cu un obiect JSON valid având exact această structură:
+Ești un recruiter senior. Analizează structura și calitatea acestui CV.
+Limba de răspuns: STRICT {target_lang}.
+Răspunde EXCLUSIV cu un obiect JSON valid:
 {{
   "clarity_score": 8,
   "relevance_score": 6,
   "structure_score": 8,
-  "detected_skills": ["Skill1_Identificat", "Skill2_Identificat"],
-  "missing_ats_keywords": ["Adăugați un Job Description pentru a genera cuvintele cheie lipsă"],
-  "concrete_improvements": ["Recomandare generală 1", "Recomandare generală 2"],
-  "suggested_rephrasings": ["Rescriere exemplu 1"]
+  "detected_skills": ["Skill1"],
+  "missing_ats_keywords": ["Adăugați un Job Description"],
+  "concrete_improvements": ["Recomandare 1"],
+  "suggested_rephrasings": ["Exemplu"]
 }}
-
-TEXT CV:
+CV:
 {cv}
 """
 
         raw_res = gemini_text(prompt)
         parsed = safe_json(raw_res)
 
-        clarity = parsed.get("clarity_score") or 8
-        relevance = parsed.get("relevance_score") or (7 if job else 5)
-        structure = parsed.get("structure_score") or 8
-
-        # Separăm ce are din job vs ce îi lipsește
-        matched_keywords = parsed.get("matched_ats_keywords") or parsed.get("detected_skills") or []
-        missing_keywords = parsed.get("missing_ats_keywords") or []
-        
-        improvements = parsed.get("concrete_improvements") or ["Adăugați rezultate măsurabile."]
-        rephrasings = parsed.get("suggested_rephrasings") or []
-
         payload = {
-            "clarity_score": clarity,
-            "relevance_score": relevance,
-            "structure_score": structure,
+            "clarity_score": parsed.get("clarity_score", 8),
+            "relevance_score": parsed.get("relevance_score", 7 if job else 5),
+            "structure_score": parsed.get("structure_score", 8),
             "has_job_context": bool(job),
-            "ats_keywords": matched_keywords,  # Cuvinte găsite
-            "missing_keywords": missing_keywords,  # Cuvinte care LIPSEC din CV (din Job)
-            "concrete_improvements": improvements,
-            "suggested_rephrasings": rephrasings
+            "ats_keywords": parsed.get("matched_ats_keywords") or parsed.get("detected_skills") or [],
+            "missing_keywords": parsed.get("missing_ats_keywords") or [],
+            "concrete_improvements": parsed.get("concrete_improvements") or [],
+            "suggested_rephrasings": parsed.get("suggested_rephrasings") or []
         }
 
         return api_response(payload=payload)
-
     except Exception as e:
         return api_response(error=f"Eroare analiză CV: {str(e)}", code=500)
 
-# ------------------------------------------
-# RUTA 3: POTRIVIRE CV CU JOB (Match / Job Fit)
-# ------------------------------------------
 @app.route("/match-job", methods=["POST", "OPTIONS"], endpoint="match_job_root")
 @app.route("/api/match-job", methods=["POST", "OPTIONS"], endpoint="match_job_api")
 @cross_origin()
@@ -322,33 +285,24 @@ def match_job():
         target_lang = data.get("target_language") or data.get("language") or "ro"
 
         if not cv or not job_desc:
-            return api_response(error="Atât CV-ul cât și Descrierea Jobului sunt necesare.", code=400)
-
-        MEMORY["job_description"] = job_desc
+            return api_response(error="CV-ul și Descrierea Jobului sunt necesare.", code=400)
 
         prompt = f"""
 Compară CV-ul cu Descrierea Jobului. Limba de răspuns: STRICT {target_lang}.
 Returnează DOAR un obiect JSON valid:
 {{
   "match_score": 75,
-  "matching_skills": ["abilitate1", "abilitate2"],
-  "missing_skills": ["cerinta1", "cerinta2"],
-  "recommendations": ["recomandare1", "recomandare2"]
+  "matching_skills": ["abilitate1"],
+  "missing_skills": ["cerinta1"],
+  "recommendations": ["recomandare1"]
 }}
-
 CV:
 {cv}
-
 JOB DESCRIPTION:
 {job_desc}
 """
         raw_res = gemini_text(prompt)
-        parsed = safe_json(raw_res) or {
-            "match_score": 65,
-            "matching_skills": ["Experiență domeniu"],
-            "missing_skills": ["Cerințe tehnice specifice"],
-            "recommendations": ["Evidențiați mai clar experiența relevantă în prima parte a CV-ului."]
-        }
+        parsed = safe_json(raw_res) or {}
 
         payload = {
             "match_score": parsed.get("match_score", 65),
@@ -362,9 +316,6 @@ JOB DESCRIPTION:
     except Exception as e:
         return api_response(error=f"Eroare match-job: {str(e)}", code=500)
 
-# ------------------------------------------
-# RUTA 4: SIMULARE INTERVIU (Interview Simulation)
-# ------------------------------------------
 @app.route("/interview-question", methods=["POST", "OPTIONS"], endpoint="interview_question_root")
 @app.route("/api/interview-question", methods=["POST", "OPTIONS"], endpoint="interview_question_api")
 @cross_origin()
@@ -379,23 +330,16 @@ def interview_question():
         target_lang = data.get("target_language") or data.get("language") or "ro"
 
         prompt = f"""
-Ești un recrutator care susține un interviu pentru rolul: {role}.
-Limba de răspuns: STRICT {target_lang}.
-Răspunsul candidatului: "{user_answer}"
-
+Ești un recrutator pentru rolul: {role}. Limba: STRICT {target_lang}. Răspuns candidat: "{user_answer}"
 Returnează DOAR un obiect JSON valid:
 {{
-  "feedback": "Evaluare scurtă și constructivă.",
+  "feedback": "Evaluare...",
   "score": 8,
-  "next_question": "Următoarea întrebare adresată candidatului."
+  "next_question": "Următoarea întrebare..."
 }}
 """
         raw_res = gemini_text(prompt)
-        parsed = safe_json(raw_res) or {
-            "feedback": "Răspuns clar. Detaliați puțin rolul dumneavoastră direct.",
-            "score": 7,
-            "next_question": "Cum gestionați situațiile de presiune sau termenele limită strânse?"
-        }
+        parsed = safe_json(raw_res) or {}
 
         payload = {
             "feedback": parsed.get("feedback", ""),
@@ -408,9 +352,6 @@ Returnează DOAR un obiect JSON valid:
     except Exception as e:
         return api_response(error=f"Eroare interviu: {str(e)}", code=500)
 
-# ------------------------------------------
-# RUTA 5: TRADUCERE CV / TEXT (Translate)
-# ------------------------------------------
 @app.route("/translate", methods=["POST", "OPTIONS"], endpoint="translate_root")
 @app.route("/api/translate", methods=["POST", "OPTIONS"], endpoint="translate_api")
 @cross_origin()
@@ -423,10 +364,7 @@ def translate():
         text = data.get("text") or MEMORY.get("cv_text") or ""
         target_lang = data.get("target_language") or data.get("language") or "en"
 
-        if not text:
-            return api_response(error="Textul de tradus lipsește.", code=400)
-
-        prompt = f"Translate the following professional resume text into {target_lang}. Maintain a formal tone:\n\n{text}"
+        prompt = f"Translate into {target_lang} maintaining a formal tone:\n\n{text}"
         translated_text = gemini_text(prompt)
 
         payload = {
@@ -434,13 +372,12 @@ def translate():
             "translation": translated_text,
             "text": translated_text
         }
-
         return api_response(payload=payload)
     except Exception as e:
         return api_response(error=f"Eroare traducere: {str(e)}", code=500)
 
 # ------------------------------------------
-# RUTA 6: RESCRIERE / REPHRASE BULLET POINT
+# RUTA 6 CORECTATĂ: REFRAME / REPHRASE (Ține cont și de Job Description)
 # ------------------------------------------
 @app.route("/rephrase", methods=["POST", "OPTIONS"], endpoint="rephrase_root")
 @app.route("/api/rephrase", methods=["POST", "OPTIONS"], endpoint="rephrase_api")
@@ -451,22 +388,46 @@ def rephrase():
 
     try:
         data = request.get_json(force=True, silent=True) or {}
-        bullet_point = data.get("text", "")
+        cv_text = data.get("text") or MEMORY.get("cv_text") or ""
+        job_desc = data.get("job_description") or MEMORY.get("job_description") or ""
         target_lang = data.get("target_language") or data.get("language") or "ro"
 
-        if not bullet_point:
-            return api_response(error="Textul pentru rescriere lipsește.", code=400)
+        if not cv_text:
+            return api_response(error="Textul CV-ului pentru reformulare lipsește.", code=400)
 
-        prompt = f"""
-Îmbunătățește acest punct din CV folosind verbe puternice de acțiune și un stil profesional.
+        # Prompt inteligent care rescrie și adaptează CV-ul în funcție de jobul furnizat
+        if job_desc:
+            prompt = f"""
+Ești un expert în scriere de CV-uri și optimizare ATS. 
+Rescrie, structurează și refocalizează complet conținutul acestui CV pentru a fi perfect aliniat și optimizat pentru Descrierea Jobului de mai jos. 
+Folosește verbe puternice de acțiune, evidențiază realizările relevante și include cuvintele cheie critice din descrierea postului.
 Limba de răspuns: STRICT {target_lang}.
-Returnează DOAR un obiect JSON valid:
+
+Returnează DOAR un obiect JSON valid cu structura:
 {{
-  "improved_text": "Textul rescris..."
+  "improved_text": "Textul complet rescris și optimizat al CV-ului..."
 }}
 
-Original: {bullet_point}
+CV ORIGINAL:
+{cv_text}
+
+DESCRIERE JOB:
+{job_desc}
 """
+        else:
+            prompt = f"""
+Ești un expert în scriere de CV-uri. Îmbunătățește, reformulează și ridică nivelul profesional al acestui CV, organizându-l într-un format clar, cu impact puternic.
+Limba de răspuns: STRICT {target_lang}.
+
+Returnează DOAR un obiect JSON valid cu structura:
+{{
+  "improved_text": "Textul optimizat..."
+}}
+
+CV ORIGINAL:
+{cv_text}
+"""
+
         raw_res = gemini_text(prompt)
         parsed = safe_json(raw_res)
         improved = parsed.get("improved_text") if parsed else raw_res
@@ -481,9 +442,6 @@ Original: {bullet_point}
     except Exception as e:
         return api_response(error=f"Eroare rephrase: {str(e)}", code=500)
 
-# ------------------------------------------
-# RUTA 7: GENERARE REZUMAT PROFESIONAL (Summary/About Me)
-# ------------------------------------------
 @app.route("/generate-summary", methods=["POST", "OPTIONS"], endpoint="generate_summary_root")
 @app.route("/api/generate-summary", methods=["POST", "OPTIONS"], endpoint="generate_summary_api")
 @cross_origin()
@@ -496,18 +454,12 @@ def generate_summary():
         cv = clean_text(data.get("cv_text") or MEMORY.get("cv_text") or "")
         target_lang = data.get("target_language") or data.get("language") or "ro"
 
-        if not cv:
-            return api_response(error="CV lipsă pentru generarea rezumatului.", code=400)
-
         prompt = f"""
-Pe baza acestui CV, creează 3 opțiuni scurte de rezumat profesional (2-3 propoziții fiecare).
-Limba de răspuns: STRICT {target_lang}.
-
+Creează 3 opțiuni scurte de rezumat profesional. Limba: STRICT {target_lang}.
 Returnează DOAR un obiect JSON valid:
 {{
   "summaries": ["Opțiunea 1...", "Opțiunea 2...", "Opțiunea 3..."]
 }}
-
 CV:
 {cv}
 """
@@ -519,14 +471,10 @@ CV:
             "summaries": summaries,
             "summary": summaries[0] if summaries else raw_res
         }
-
         return api_response(payload=payload)
     except Exception as e:
-        return api_response(error=f"Eroare generare summary: {str(e)}", code=500)
+        return api_response(error=f"Eroare summary: {str(e)}", code=500)
 
-# ------------------------------------------
-# RUTA 8: GENERARE SCRISOARE DE INTENȚIE (Cover Letter)
-# ------------------------------------------
 @app.route("/generate-cover-letter", methods=["POST", "OPTIONS"], endpoint="cover_letter_root")
 @app.route("/api/generate-cover-letter", methods=["POST", "OPTIONS"], endpoint="cover_letter_api")
 @cross_origin()
@@ -540,40 +488,26 @@ def generate_cover_letter():
         job_desc = clean_text(data.get("job_description") or MEMORY.get("job_description") or "")
         target_lang = data.get("target_language") or data.get("language") or "ro"
 
-        if not cv:
-            return api_response(error="CV-ul este necesar pentru scrisoarea de intenție.", code=400)
-
         prompt = f"""
-Creează o scrisoare de intenție profesională (Cover Letter) adaptată pentru jobul descris.
-Limba: STRICT {target_lang}.
-
-CV Candidat:
-{cv}
-
-Descriere Job:
-{job_desc or 'Generat pentru o poziție potrivită experienței din CV.'}
+Creează o scrisoare de intenție profesională adaptată. Limba: STRICT {target_lang}.
+CV: {cv}
+Job: {job_desc}
 """
         cover_letter_text = gemini_text(prompt)
-
         payload = {
             "cover_letter": cover_letter_text,
             "text": cover_letter_text
         }
-
         return api_response(payload=payload)
     except Exception as e:
-        return api_response(error=f"Eroare generare scrisoare intenție: {str(e)}", code=500)
+        return api_response(error=f"Eroare cover letter: {str(e)}", code=500)
 
-# ------------------------------------------
-# RUTA 9: OȚINERE DATE SESIUNE (Get Current CV & Data)
-# ------------------------------------------
 @app.route("/get-session", methods=["GET", "OPTIONS"], endpoint="get_session_root")
 @app.route("/api/get-session", methods=["GET", "OPTIONS"], endpoint="get_session_api")
 @cross_origin()
 def get_session():
     if request.method == "OPTIONS":
         return api_response(code=200)
-
     return api_response(payload={
         "has_cv": bool(MEMORY.get("cv_text")),
         "cv_length": len(MEMORY.get("cv_text", "")),
@@ -582,26 +516,16 @@ def get_session():
         "job_description": MEMORY.get("job_description", "")
     })
 
-# ------------------------------------------
-# RUTA 10: RESETARE SESIUNE / CLEAR
-# ------------------------------------------
 @app.route("/clear-session", methods=["POST", "OPTIONS"], endpoint="clear_session_root")
 @app.route("/api/clear-session", methods=["POST", "OPTIONS"], endpoint="clear_session_api")
 @cross_origin()
 def clear_session():
     if request.method == "OPTIONS":
         return api_response(code=200)
-
     MEMORY["cv_text"] = ""
     MEMORY["job_description"] = ""
     MEMORY["interview_history"] = []
-
     return api_response(payload={"message": "Sesiunea a fost resetată cu succes."})
-
-
-# ==========================================
-# 4. TRATARE ERORI GLOBALE
-# ==========================================
 
 @app.errorhandler(404)
 def not_found(e):
@@ -609,12 +533,7 @@ def not_found(e):
 
 @app.errorhandler(500)
 def server_error(e):
-    return api_response(error="A apărut o eroare internă pe server.", code=500)
-
-
-# ==========================================
-# 5. PORNIRE APLICAȚIE (Render Compliant)
-# ==========================================
+    return api_response(error="Eroare internă pe server.", code=500)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
