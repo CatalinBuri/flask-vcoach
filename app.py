@@ -2,6 +2,7 @@ import os
 import re
 import json
 import traceback
+import httpx
 from flask import Flask, request, jsonify
 from flask_cors import CORS, cross_origin
 
@@ -18,20 +19,17 @@ MEMORY = {
 }
 
 # ==========================================
-# 1. INIȚIALIZARE CLIENȚI AI (Gemini, Groq & Mistral)
-# ==========================================
-# ==========================================
-# 1. FUNCȚII AUXILIARE PENTRU MISTRAL (DEFINITE PRIMUL)
+# 1. FUNCȚII AUXILIARE PENTRU MISTRAL
 # ==========================================
 
 def call_mistral_api(
     prompt: str,
-    model: str = "mistral-medium-latest",
+    model: str = "mistral-small-latest",
     temperature: float = 0.2,
     max_tokens: int = 4096
 ) -> str:
     """Fallback direct API call când SDK-ul nu este disponibil."""
-    MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")  # Re-citit aici pentru siguranță
+    MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
     if not MISTRAL_API_KEY:
         return ""
 
@@ -54,10 +52,15 @@ def call_mistral_api(
         with httpx.Client(timeout=30.0) as client:
             response = client.post(url, headers=headers, json=payload)
             response.raise_for_status()
-            return response.json()["choices"][0]["message"]["content"]
+            data = response.json()
+            return data["choices"][0]["message"]["content"]
     except Exception as e:
         print(f"❌ Eroare API Mistral direct: {type(e).__name__} - {str(e)}", flush=True)
         return ""
+
+# ==========================================
+# 2. INIȚIALIZARE CLIENȚI AI (Gemini, Groq & Mistral)
+# ==========================================
 
 # 1. Gemini Client
 gemini_client = None
@@ -93,7 +96,6 @@ MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
 
 if MISTRAL_API_KEY:
     try:
-        #Încercăm SDK-ul oficial Mistral
         try:
             from mistralai import Mistral
             mistral_client = Mistral(api_key=MISTRAL_API_KEY)
@@ -106,7 +108,6 @@ if MISTRAL_API_KEY:
                 USE_MISTRAL = True
                 print("✅ Mistral ready (SDK Legacy)", flush=True)
             except ImportError:
-                # Dacă SDK-ul nu este instalat, testăm API-ul direct
                 test_response = call_mistral_api("Spune 'test'")
                 if "test" in test_response.lower():
                     USE_MISTRAL = True
@@ -118,7 +119,7 @@ if MISTRAL_API_KEY:
 
 
 # ==========================================
-# 2. FUNCȚII AUXILIARE & UTILS (inclusiv Anti-Halucinație & Duplicate)
+# 3. FUNCȚII AUXILIARE & UTILS
 # ==========================================
 
 def clean_text(text: str) -> str:
@@ -195,10 +196,10 @@ def api_response(payload=None, error=None, code=200):
 
 def gemini_text(prompt: str) -> str:
     """
-    Logică de Fallback în lanț cerută: 
-    1. Încearcă Gemini
-    2. Dacă eșuează, încearcă Grok
-    3. Dacă eșuează, încearcă Mistral
+    Logică de Fallback în lanț: 
+    1. Gemini
+    2. Groq
+    3. Mistral (SDK sau Direct API)
     """
     
     # --- 1. Încercare cu GEMINI ---
@@ -235,39 +236,46 @@ def gemini_text(prompt: str) -> str:
             print(f"⚠️ Eroare Grok: {type(e).__name__} - {str(e)}. Fallback pe Mistral...", flush=True)
 
     # --- 3. Încercare cu MISTRAL ---
-    if USE_MISTRAL and mistral_client:
+    if USE_MISTRAL:
         try:
-            # Verificăm dacă folosim noul sau vechiul client SDK
-            if hasattr(mistral_client, "chat"):
-                res = mistral_client.chat.complete(
-                    model="mistral-small-latest",
-                    messages=[
-                        {"role": "system", "content": "Ești un asistent AI profesionist specializat în resurse umane."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.2,
-                    max_tokens=4096
-                )
-                if res and res.choices and res.choices[0].message.content:
-                    return res.choices[0].message.content.strip()
-            else:
-                # Variantă pentru SDK-ul clasic MistralClient
-                res = mistral_client.complete(
-                    model="mistral-small-latest",
-                    prompt=prompt,
-                    temperature=0.2,
-                    max_tokens=4096
-                )
-                if res and res.choices and res.choices[0].message.text:
-                    return res.choices[0].message.text.strip()
+            if mistral_client:
+                if hasattr(mistral_client, "chat"):
+                    res = mistral_client.chat.complete(
+                        model="mistral-small-latest",
+                        messages=[
+                            {"role": "system", "content": "Ești un asistent AI profesionist specializat în resurse umane."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.2,
+                        max_tokens=4096
+                    )
+                    if res and res.choices and res.choices[0].message.content:
+                        return res.choices[0].message.content.strip()
+                else:
+                    res = mistral_client.complete(
+                        model="mistral-small-latest",
+                        prompt=prompt,
+                        temperature=0.2,
+                        max_tokens=4096
+                    )
+                    if res and res.choices and res.choices[0].message.text:
+                        return res.choices[0].message.text.strip()
+            
+            # Fallback la API-ul direct dacă clientul SDK nu răspunde corect
+            direct_res = call_mistral_api(prompt)
+            if direct_res:
+                return direct_res
+                
         except Exception as e:
             print(f"❌ Eroare Mistral: {type(e).__name__} - {str(e)}", flush=True)
+            # Ultima încercare prin apel direct HTTP
+            return call_mistral_api(prompt)
 
     return ""
 
 
 # ==========================================
-# 3. RUTELE API
+# 4. RUTELE API
 # ==========================================
 
 @app.route("/", methods=["GET", "HEAD"])
