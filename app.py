@@ -251,22 +251,22 @@ def map_reduce_rephrase(cv_text: str, job_desc: str, target_lang: str) -> str:
             
         clean_sec_name = sec_name.upper().strip()
         
+        # PROMPT UNIVERSAL GENERALIZAT PENTRU ORICE CV & JOB
         prompt = f"""
-Ești un expert tehnic în resurse umane pentru industria AUTOMOTIVE și inginerie software/hardware (ECU, CATIA, SDV). 
-Optimizează strict această secțiune ({clean_sec_name}) a CV-ului unui Engineering Manager real. 
+Ești un expert global în optimizare ATS și resurse umane pentru diverse industrie. 
+Sarcina ta este să reformulezi și să optimizezi secțiunea ({clean_sec_name}) a CV-ului candidatului, raportat la Descrierea de Job (Job Description) furnizată.
 
-REGULI CRITICE DE SEPARARE ȘI INTEGRITATE (ANTI-CONTAMINARE):
-1. REGULA ADEVĂRULUI TEHNIC: Folosește descrierea de job de mai jos DOAR pentru a prelua cuvinte-cheie tehnice și stilul de exprimare. Este STRICT INTERZIS să introduci în CV activități de "Market Research", "cercetare de piață" sau "client service non-tehnic", dacă ele nu există deja în experiența reală de Automotive Engineering a candidatului.
-2. DOMENIU STRICT: Candidatul lucrează în Automotive (Renault/Horse, ECU, SDV, SFS, Management de Proiect Tehnic, Brevete oficiale). Păstrează exclusiv acest domeniu.
-3. FĂRĂ INVENȚII: Nu inventa publicații sau conferințe. Păstrează brevetele reale (patents).
-4. STRUCTURĂ: Nu duplica titlurile în interiorul conținutului.
-5. FORMAT: Răspunde EXCLUSIV în format HTML curat (<p>, <ul>, <li>, <strong>), FĂRĂ blocuri de cod markdown.
-6. LIMBĂ: STRICT {target_lang}.
+REGULI ABSOLUTE DE INTEGRITATE ȘI ANTI-HALUCINAȚIE (VALABILE PENTRU ORICE DOMENIU):
+1. ADEVĂRUL FACTUAL STRICT: Folosește Descrierea de Job **DOAR** pentru a alinia stilul de limbaj, tonul și pentru a evidenția competențele reale ale candidatului care se potrivesc cu cerințele. Este **STRICT INTERZIS** să inventezi experiențe, joburi, companii, date cronologice, publicații, brevete, certificări sau instrumente/tehnologii care nu sunt menționate explicit în CV-ul original al candidatului.
+2. PROTECȚIA ARTEFACTELOR: Dacă secțiunea conține elemente unice (cum ar fi numere de brevete, titluri de publicații, premii sau linkuri oficiale), acestea trebuie păstrate exact așa cum apar în CV, fără a fi alterate sau înlocuite cu altele fictive.
+3. ALINIERE FĂRĂ CONTAMINARE: Nu prelua activități specifice dintr-un domeniu non-compatibil din JD dacă acestea contrazic profilul de bază al candidatului. Optimizarea înseamnă scoaterea în evidență a realizărilor reale ale candidatului prin prisma cerințelor postului, nu fabricarea unui profil nou.
+4. FORMAT: Răspunde EXCLUSIV în format HTML curat (<p>, <ul>, <li>, <strong>), FĂRĂ blocuri de cod markdown (fără ```html sau ```).
+5. LIMBĂ: STRICT {target_lang}.
 
-CONȚINUTul ORIGINAL AL ACESTEI SECȚIUNI DIN CV:
+CONȚINUTUL ORIGINAL AL ACESTEI SECȚIUNI DIN CV:
 {sec_content[:4000]}
 
-DESCRIERE JOB DE REFERINȚĂ (Folosește DOAR pentru alinierea termenilor de management/tehnici, FĂ A PRELUA DOMENIUL DE MARKET RESEARCH):
+DESCRIERE JOB DE REFERINȚĂ (Folosește exclusiv pentru orientarea cuvintelor-cheie și a compatibilității, fără a genera date false):
 {job_desc[:2000]}
 """
         raw_res = gemini_text(prompt, max_tokens=2048)
@@ -278,9 +278,8 @@ DESCRIERE JOB DE REFERINȚĂ (Folosește DOAR pentru alinierea termenilor de man
             
     combined_html = "\n".join(html_results)
     
-    # Aplicare filtre postprocesare completă
+    # Aplicare filtre generale de curățare HTML
     final_clean_html = postprocess_cv_html(combined_html)
-    final_clean_html = validate_and_fix_translations(final_clean_html, target_lang)
     
     return final_clean_html
 
