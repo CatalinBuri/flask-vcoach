@@ -18,9 +18,23 @@ MEMORY = {
 }
 
 # ==========================================
-# 1. INIȚIALIZARE CLIENT AI (Groq & Gemini)
+# 1. INIȚIALIZARE CLIENȚI AI (Gemini, Groq & Mistral)
 # ==========================================
 
+# 1. Gemini Client
+gemini_client = None
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+MODEL_NAME = "gemini-2.5-flash"
+
+if GEMINI_API_KEY:
+    try:
+        from google import genai
+        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        print("✅ Gemini ready | model:", MODEL_NAME, flush=True)
+    except Exception as e:
+        print(f"⚠️ Gemini nu a putut fi inițializat: {e}", flush=True)
+
+# 2. Groq Client
 groq_client = None
 USE_GROQ = False
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -34,17 +48,19 @@ if GROQ_API_KEY:
     except Exception as e:
         print(f"⚠️ Groq nu a putut fi inițializat: {e}", flush=True)
 
-gemini_client = None
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-MODEL_NAME = "gemini-2.5-flash"
+# 3. Mistral Client
+mistral_client = None
+USE_MISTRAL = False
+MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
 
-if GEMINI_API_KEY:
+if MISTRAL_API_KEY:
     try:
-        from google import genai
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
-        print("✅ Gemini ready | model:", MODEL_NAME, flush=True)
+        from mistralai import Mistral
+        mistral_client = Mistral(api_key=MISTRAL_API_KEY)
+        USE_MISTRAL = True
+        print("✅ Mistral ready", flush=True)
     except Exception as e:
-        print(f"⚠️ Gemini nu a putut fi inițializat: {e}", flush=True)
+        print(f"⚠️ Mistral nu a putut fi inițializat: {e}", flush=True)
 
 
 # ==========================================
@@ -124,6 +140,26 @@ def api_response(payload=None, error=None, code=200):
     return jsonify(base_response), code
 
 def gemini_text(prompt: str) -> str:
+    """
+    Logică de Fallback în lanț cerută: 
+    1. Încearcă Gemini
+    2. Dacă eșuează, încearcă Grok
+    3. Dacă eșuează, încearcă Mistral
+    """
+    
+    # --- 1. Încercare cu GEMINI ---
+    if gemini_client:
+        try:
+            response = gemini_client.models.generate_content(
+                model=MODEL_NAME,
+                contents=prompt
+            )
+            if response and hasattr(response, "text") and response.text:
+                return response.text.strip()
+        except Exception as e:
+            print(f"⚠️ Eroare Gemini: {type(e).__name__} - {str(e)}. Fallback pe Grok...", flush=True)
+
+    # --- 2. Încercare cu GROK ---
     if USE_GROQ and groq_client:
         try:
             res = groq_client.with_options(max_retries=0).chat.completions.create(
@@ -142,18 +178,27 @@ def gemini_text(prompt: str) -> str:
             if res and res.choices and res.choices[0].message.content:
                 return res.choices[0].message.content.strip()
         except Exception as e:
-            print(f"⚠️ Groq Rate Limit / Error. Fallback pe Gemini...", flush=True)
+            print(f"⚠️ Eroare Grok: {type(e).__name__} - {str(e)}. Fallback pe Mistral...", flush=True)
 
-    if gemini_client:
+    # --- 3. Încercare cu MISTRAL ---
+    if USE_MISTRAL and mistral_client:
         try:
-            response = gemini_client.models.generate_content(
-                model=MODEL_NAME,
-                contents=prompt
+            res = mistral_client.chat.complete(
+                model="mistral-small-latest",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Ești un asistent AI profesionist specializat în resurse umane, optimizare CV-uri și interviuri."
+                    },
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,
+                max_tokens=4096
             )
-            if response and hasattr(response, "text") and response.text:
-                return response.text.strip()
+            if res and res.choices and res.choices[0].message.content:
+                return res.choices[0].message.content.strip()
         except Exception as e:
-            print(f"❌ Eroare Gemini: {type(e).__name__} - {str(e)}", flush=True)
+            print(f"❌ Eroare Mistral: {type(e).__name__} - {str(e)}", flush=True)
 
     return ""
 
@@ -168,8 +213,9 @@ def index():
         "status": "online",
         "success": True,
         "service": "vCoach AI API",
+        "gemini_active": gemini_client is not None,
         "groq_active": USE_GROQ,
-        "gemini_active": gemini_client is not None
+        "mistral_active": USE_MISTRAL
     }), 200
 
 @app.route("/ping", methods=["GET", "HEAD"])
