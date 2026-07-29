@@ -202,26 +202,33 @@ def split_cv_into_sections(cv_text: str) -> dict:
     return sections
 
 def map_reduce_rephrase(cv_text: str, job_desc: str, target_lang: str) -> str:
-    """Rescrie CV-ul secțiune cu secțiune menținând contextul tehnic original."""
+    """Rescrie CV-ul secțiune cu secțiune menținând contextul tehnic original și eliminând dublurile."""
     sections = split_cv_into_sections(cv_text)
     html_results = []
+
+    # Maparea secțiunilor valide din CV-ul real pentru a preveni contaminarea cu date false
+    valid_sections = ["ABOUT ME", "WORK EXPERIENCE", "EXPERIENCE", "EDUCATION", "EDUCATION AND TRAINING", "SKILLS", "PUBLICATIONS", "PATENTS"]
 
     for sec_name, sec_content in sections.items():
         if not sec_content.strip():
             continue
             
+        # Asigurăm un format curat al titlului și evităm secțiunile necunoscute / inventate
+        clean_sec_name = sec_name.upper().strip()
+        
         prompt = f"""
-Ești un expert tehnic în resurse umane pentru industria AUTOMOTIVE și inginerie software/hardware. 
-Optimizează strict această secțiune ({sec_name}) a CV-ului unui Engineering Manager specializat în sisteme automotive (ECU, CATIA, SDV, management de proiect tehnic). 
+Ești un expert tehnic senior în resurse umane pentru industria AUTOMOTIVE și inginerie software/hardware (ECU, CATIA, SDV). 
+Optimizează strict această secțiune ({clean_sec_name}) a CV-ului unui Engineering Manager real.
 
-REGULI STRICTE:
-- Păstrează DOMENIUL AUTOMOTIVE (nu inventa activități de cercetare de piață sau non-tehnice).
-- Folosește verbe puternice de acțiune specifice managementului tehnic.
-- Răspunde EXCLUSIV în format HTML curat (fără tag-uri de titlu dublate, folosește <p>, <ul>, <li>, <strong>), FĂRĂ blocuri de cod markdown (fără ```html sau ```).
-- Limba de răspuns: STRICT {target_lang}.
+REGULI STRICTE DE SIGURANȚĂ ȘI INTEGRITATE A DATELOR:
+1. DOMENIU STRICT: Rămâi 100% în domeniul AUTOMOTIVE și management tehnic. Este INTERZIS să introduci activități de "cercetare de piață" (market research), "chestionare de opinie" sau alte domenii non-tehnice.
+2. FĂRĂ INVENȚII: Nu inventa publicații, articole sau conferințe care nu există în textul sursă. Dacă există brevete (patents), păstrează-le exact pe cele originale (de exemplu, brevete de bare de portbagaj sau sisteme de planșă de bord).
+3. STRUCTURĂ: Nu duplica titlurile în interiorul conținutului.
+4. FORMAT: Răspunde EXCLUSIV în format HTML curat (folosind tag-uri precum <p>, <ul>, <li>, <strong>), FĂRĂ blocuri de cod markdown (fără ```html sau ```).
+5. LIMBĂ: Limba de răspuns: STRICT {target_lang}.
 
-CONȚINUTUL SECȚIUNII DE OPTIMIZAT:
-{sec_content[:3000]}
+CONȚINUTUL ORIGINAL AL ACESTEI SECȚIUNI:
+{sec_content[:4000]}
 
 DESCRIERE JOB DE REFERINȚĂ (dacă există):
 {job_desc[:2000]}
@@ -231,8 +238,8 @@ DESCRIERE JOB DE REFERINȚĂ (dacă există):
         cleaned_sec = re.sub(r'\s*```$', '', cleaned_sec, flags=re.MULTILINE).strip()
         
         if cleaned_sec:
-            # Adăugăm unicul titlu oficial al secțiunii curat, fără dubluri
-            html_results.append(f"<div class='cv-section'><h3>{sec_name}</h3>{cleaned_sec}</div>")
+            # Generăm un singur titlu per secțiune, eliminând orice duplicat intern generat de AI
+            html_results.append(f"<div class='cv-section'><h2>{clean_sec_name}</h2>\n{cleaned_sec}\n</div>")
             
     return "\n".join(html_results)
 
