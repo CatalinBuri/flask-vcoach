@@ -6,6 +6,7 @@ python-dotenv==1.0.1
 google-genai>=2.14.0
 groq>=1.6.0
 huggingface_hub
+mistralai
 PyMuPDF>=1.28.0
 pytesseract>=0.3.13
 pillow>=12.3.0
