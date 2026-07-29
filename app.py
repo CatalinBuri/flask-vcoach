@@ -56,7 +56,7 @@ if USE_HF:
 
 
 # ==========================================
-# 2. FUNCȚII AUXILIARE & UTILS
+# 2. FUNCȚII AUXILIARE, UTILS & MAP-REDUCE
 # ==========================================
 
 def clean_text(text: str) -> str:
@@ -119,7 +119,7 @@ def call_huggingface(prompt: str) -> str:
         response = client.chat_completion(
             model="Qwen/Qwen2.5-7B-Instruct",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=2048,
+            max_tokens=4096,
             temperature=0.2
         )
         if response and response.choices:
@@ -128,7 +128,7 @@ def call_huggingface(prompt: str) -> str:
         print(f"⚠️ Eroare Hugging Face Hub: {e}", flush=True)
     return ""
 
-def gemini_text(prompt: str) -> str:
+def gemini_text(prompt: str, max_tokens: int = 4096) -> str:
     # 1. Încercăm Groq
     if USE_GROQ and groq_client:
         try:
@@ -145,8 +145,8 @@ def gemini_text(prompt: str) -> str:
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
-                max_tokens=4096,
-                timeout=12.0
+                max_tokens=min(max_tokens, 4096),
+                timeout=15.0
             )
             if res and res.choices and res.choices[0].message.content:
                 text_res = res.choices[0].message.content.strip()
@@ -183,6 +183,73 @@ def gemini_text(prompt: str) -> str:
 
 
 # ==========================================
+# FUNCȚII MAP-REDUCE PENTRU CV-URI LUNGI
+# ==========================================
+
+def split_cv_into_sections(cv_text: str) -> dict:
+    """Împarte CV-ul în secțiuni logice pe baza unor cuvinte cheie comune."""
+    keywords = [
+        "EXPERIENȚĂ", "EXPERIENCE", "EXPERIENTA", 
+        "EDUCAȚIE", "EDUCATION", "EDUCATIE", 
+        "COMPETENȚE", "COMPETENTE", "SKILLS", "ABILITĂȚI", "ABILITATI",
+        "PROIECTE", "PROJECTS", "CERTIFICĂRI", "CERTIFICARI", "CERTIFICATIONS",
+        "LIMBI", "LANGUAGES", "REZUMAT", "SUMMARY", "PROFILE", "DESPRE MINE"
+    ]
+    
+    pattern = r'(?i)\b(' + '|'.join(keywords) + r')\b'
+    parts = re.split(pattern, cv_text)
+    
+    sections = {}
+    current_section = "INFORMATII_GENERALE"
+    sections[current_section] = ""
+    
+    for i in range(1, len(parts), 2):
+        current_section = parts[i].upper()
+        content = parts[i+1] if i+1 < len(parts) else ""
+        sections[current_section] = content.strip()
+        
+    # Dacă textul nu a putut fi împărțit logic, îl returnăm ca o singură secțiune
+    if len(sections) <= 1 and len(cv_text.strip()) > 0:
+        return {"CONTINUT_CV": cv_text}
+        
+    return sections
+
+
+def map_reduce_rephrase(cv_text: str, job_desc: str, target_lang: str) -> str:
+    """Aplică Map-Reduce pentru reformularea CV-ului pe secțiuni, evitând trunchierea."""
+    sections = split_cv_into_sections(cv_text)
+    html_results = []
+
+    for sec_name, sec_content in sections.items():
+        if not sec_content.strip():
+            continue
+            
+        prompt = f"""
+Ești un expert în scriere de CV-uri și optimizare ATS. 
+Rescrie și optimizează exclusiv această secțiune a CV-ului ({sec_name}) pentru a fi perfect aliniată cu Descrierea Jobului.
+Folosește verbe puternice de acțiune.
+
+IMPORTANT: Răspunde exclusiv în format HTML curat pentru această secțiune (folosind tag-uri precum <h3>, <h4>, <p>, <ul>, <li>, <strong>), FĂRĂ blocuri de cod markdown (fără ```html sau ```).
+Limba de răspuns: STRICT {target_lang}.
+
+SECȚIUNEA CV DE REZOLVAT:
+{sec_content[:3000]}
+
+DESCRIERE JOB:
+{job_desc[:2000]}
+"""
+        raw_res = gemini_text(prompt, max_tokens=2048)
+        # Curățăm eventualele taguri markdown din răspunsul bucății
+        cleaned_sec = re.sub(r'^```(?:html)?\s*', '', raw_res.strip(), flags=re.MULTILINE)
+        cleaned_sec = re.sub(r'\s*```$', '', cleaned_sec, flags=re.MULTILINE).strip()
+        
+        if cleaned_sec:
+            html_results.append(f"<div class='cv-section'><h3>{sec_name}</h3>{cleaned_sec}</div>")
+            
+    return "\n".join(html_results)
+
+
+# ==========================================
 # 3. RUTELE API
 # ==========================================
 
@@ -191,7 +258,7 @@ def index():
     return jsonify({
         "status": "online",
         "success": True,
-        "service": "vCoach AI API",
+        "service": "vCoach AI API (Map-Reduce Enabled)",
         "groq_active": USE_GROQ,
         "gemini_active": gemini_client is not None,
         "huggingface_active": USE_HF
@@ -257,8 +324,8 @@ def analyze_cv_quality():
         if job:
             MEMORY["job_description"] = job
 
-        # Limităm lungimea doar în prompt ca să nu dăm eroare 413 la Groq, păstrând integral limba cerută
-        cv_snippet = cv[:3000]
+        # Map-Reduce pentru analiză pe secțiuni dacă CV-ul este foarte mare
+        cv_snippet = cv[:4000]
         job_snippet = job[:2000]
 
         if job:
@@ -343,7 +410,7 @@ Returnează DOAR un obiect JSON valid:
   "recommendations": ["recomandare1"]
 }}
 CV:
-{cv[:3000]}
+{cv[:4000]}
 JOB DESCRIPTION:
 {job_desc[:2000]}
 """
@@ -412,7 +479,7 @@ def translate():
         text = data.get("text") or MEMORY.get("cv_text") or ""
         target_lang = data.get("target_language") or data.get("language") or "en"
 
-        prompt = f"Translate into {target_lang} maintaining a formal tone:\n\n{text[:3000]}"
+        prompt = f"Translate into {target_lang} maintaining a formal tone:\n\n{text[:4000]}"
         translated_text = gemini_text(prompt)
 
         payload = {
@@ -440,51 +507,11 @@ def rephrase():
         if not cv_text:
             return api_response(error="Textul CV-ului pentru reformulare lipsește.", code=400)
 
-        if job_desc:
-            prompt = f"""
-Ești un expert în scriere de CV-uri și optimizare ATS. 
-Rescrie și optimizează complet conținutul acestui CV pentru a fi perfect aliniat cu Descrierea Jobului de mai jos. 
-Folosește verbe puternice de acțiune și include cuvintele cheie critice.
+        # APLICĂM MAP-REDUCE INTEGRAL PE SECȚIUNI
+        improved = map_reduce_rephrase(cv_text, job_desc, target_lang)
 
-IMPORTANT: Răspunde exclusiv în format HTML curat (folosind tag-uri precum <h3>, <h4>, <p>, <ul>, <li>, <strong>), FĂRĂ blocuri de cod markdown (fără ```html sau ```).
-Limba de răspuns: STRICT {target_lang}.
-
-Returnează DOAR un obiect JSON valid cu structura:
-{{
-  "improved_text": "<h3>Nume Prenume</h3><p>...</p>..."
-}}
-
-CV ORIGINAL:
-{cv_text[:3000]}
-
-DESCRIERE JOB:
-{job_desc[:2000]}
-"""
-        else:
-            prompt = f"""
-Ești un expert în scriere de CV-uri. Îmbunătățește și reformulează acest CV într-un format clar, cu impact puternic.
-
-IMPORTANT: Răspunde exclusiv în format HTML curat (folosind tag-uri precum <h3>, <h4>, <p>, <ul>, <li>, <strong>), FĂRĂ blocuri de cod markdown (fără ```html sau ```).
-Limba de răspuns: STRICT {target_lang}.
-
-Returnează DOAR un obiect JSON valid cu structura:
-{{
-  "improved_text": "<h3>Nume Prenume</h3><p>...</p>..."
-}}
-
-CV ORIGINAL:
-{cv_text[:3000]}
-"""
-
-        raw_res = gemini_text(prompt)
-        parsed = safe_json(raw_res)
-        
-        improved = parsed.get("improved_text") if parsed else raw_res
         if not improved or len(str(improved).strip()) == 0:
-            improved = raw_res
-            
-        improved = re.sub(r'^```(?:html)?\s*', '', str(improved).strip(), flags=re.MULTILINE)
-        improved = re.sub(r'\s*```$', '', improved, flags=re.MULTILINE).strip()
+            improved = "<p>Eroare la procesarea prin Map-Reduce a secțiunilor.</p>"
 
         payload = {
             "improved_text": improved,
@@ -516,7 +543,7 @@ Returnează DOAR un obiect JSON valid:
   "summaries": ["Opțiunea 1...", "Opțiunea 2...", "Opțiunea 3..."]
 }}
 CV:
-{cv[:3000]}
+{cv[:4000]}
 """
         raw_res = gemini_text(prompt)
         parsed = safe_json(raw_res)
@@ -546,10 +573,10 @@ def generate_cover_letter():
         prompt = f"""
 Creează o scrisoare de intenție profesională adaptată. 
 Limba de răspuns: STRICT {target_lang}.
-CV: {cv[:2500]}
-Job: {job_desc[:1500]}
+CV: {cv[:3000]}
+Job: {job_desc[:2000]}
 """
-        cover_letter_text = gemini_text(prompt)
+        cover_letter_text = gemini_text(prompt, max_tokens=3000)
         payload = {
             "cover_letter": cover_letter_text,
             "text": cover_letter_text
@@ -593,5 +620,5 @@ def server_error(e):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
-    print(f"🚀 Serverul pornește pe portul {port}...", flush=True)
+    print(f"🚀 Serverul pornește pe portul {port} (cu Map-Reduce activat)...", flush=True)
     app.run(host="0.0.0.0", port=port, debug=False)
