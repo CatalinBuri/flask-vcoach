@@ -55,8 +55,14 @@ MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
 
 if MISTRAL_API_KEY:
     try:
-        from mistralai import Mistral
-        mistral_client = Mistral(api_key=MISTRAL_API_KEY)
+        # Încercăm ambele variante de import pentru compatibilitate cu orice versiune mistralai
+        try:
+            from mistralai import Mistral
+            mistral_client = Mistral(api_key=MISTRAL_API_KEY)
+        except ImportError:
+            from mistralai.client import MistralClient
+            mistral_client = MistralClient(api_key=MISTRAL_API_KEY)
+            
         USE_MISTRAL = True
         print("✅ Mistral ready", flush=True)
     except Exception as e:
@@ -183,20 +189,29 @@ def gemini_text(prompt: str) -> str:
     # --- 3. Încercare cu MISTRAL ---
     if USE_MISTRAL and mistral_client:
         try:
-            res = mistral_client.chat.complete(
-                model="mistral-small-latest",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Ești un asistent AI profesionist specializat în resurse umane, optimizare CV-uri și interviuri."
-                    },
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=0.2,
-                max_tokens=4096
-            )
-            if res and res.choices and res.choices[0].message.content:
-                return res.choices[0].message.content.strip()
+            # Verificăm dacă folosim noul sau vechiul client SDK
+            if hasattr(mistral_client, "chat"):
+                res = mistral_client.chat.complete(
+                    model="mistral-small-latest",
+                    messages=[
+                        {"role": "system", "content": "Ești un asistent AI profesionist specializat în resurse umane."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.2,
+                    max_tokens=4096
+                )
+                if res and res.choices and res.choices[0].message.content:
+                    return res.choices[0].message.content.strip()
+            else:
+                # Variantă pentru SDK-ul clasic MistralClient
+                res = mistral_client.complete(
+                    model="mistral-small-latest",
+                    prompt=prompt,
+                    temperature=0.2,
+                    max_tokens=4096
+                )
+                if res and res.choices and res.choices[0].message.text:
+                    return res.choices[0].message.text.strip()
         except Exception as e:
             print(f"❌ Eroare Mistral: {type(e).__name__} - {str(e)}", flush=True)
 
