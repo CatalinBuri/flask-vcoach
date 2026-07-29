@@ -20,6 +20,44 @@ MEMORY = {
 # ==========================================
 # 1. INIȚIALIZARE CLIENȚI AI (Gemini, Groq & Mistral)
 # ==========================================
+# ==========================================
+# 1. FUNCȚII AUXILIARE PENTRU MISTRAL (DEFINITE PRIMUL)
+# ==========================================
+
+def call_mistral_api(
+    prompt: str,
+    model: str = "mistral-medium-latest",
+    temperature: float = 0.2,
+    max_tokens: int = 4096
+) -> str:
+    """Fallback direct API call când SDK-ul nu este disponibil."""
+    MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")  # Re-citit aici pentru siguranță
+    if not MISTRAL_API_KEY:
+        return ""
+
+    try:
+        url = "https://api.mistral.ai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {MISTRAL_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": "Ești un asistent AI profesionist specializat în resurse umane, optimizare CV-uri și interviuri."},
+                {"role": "user", "content": prompt}
+            ],
+            "temperature": temperature,
+            "max_tokens": max_tokens
+        }
+
+        with httpx.Client(timeout=30.0) as client:
+            response = client.post(url, headers=headers, json=payload)
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        print(f"❌ Eroare API Mistral direct: {type(e).__name__} - {str(e)}", flush=True)
+        return ""
 
 # 1. Gemini Client
 gemini_client = None
