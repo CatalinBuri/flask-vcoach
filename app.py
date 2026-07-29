@@ -69,7 +69,7 @@ def clean_text(text: str) -> str:
 def postprocess_cv_html(raw_html: str) -> str:
     """
     Postprocesează HTML-ul generat pentru a elimina dublurile de titluri,
-    halucinațiile de tip 'market research' și tag-urile redundante.
+    halucinațiile nedorite și tag-urile redundante.
     """
     if not raw_html:
         return ""
@@ -129,7 +129,7 @@ def validate_and_fix_translations(text: str, target_lang: str) -> str:
 
 
 # ==========================================
-# 3. APELURI AI & MAP-REDUCE CORECTAT
+# 3. APELURI AI & MAP-REDUCE CORECTAT (Regula Adevărului Tehnic)
 # ==========================================
 
 def safe_json(raw_text: str) -> dict:
@@ -255,17 +255,18 @@ def map_reduce_rephrase(cv_text: str, job_desc: str, target_lang: str) -> str:
 Ești un expert tehnic în resurse umane pentru industria AUTOMOTIVE și inginerie software/hardware (ECU, CATIA, SDV). 
 Optimizează strict această secțiune ({clean_sec_name}) a CV-ului unui Engineering Manager real. 
 
-REGULI STRICTE DE SIGURANȚĂ ȘI INTEGRITATE:
-1. DOMENIU STRICT: Rămâi 100% în domeniul AUTOMOTIVE și management tehnic. Este INTERZIS să introduci activități de "cercetare de piață" (market research) sau non-tehnice.
-2. FĂRĂ INVENȚII: Nu inventa publicații sau conferințe. Păstrează doar elementele reale.
-3. STRUCTURĂ: Nu duplica titlurile în interiorul conținutului.
-4. FORMAT: Răspunde EXCLUSIV în format HTML curat (<p>, <ul>, <li>, <strong>), FĂRĂ blocuri de cod markdown (fără ```html sau ```).
-5. LIMBĂ: STRICT {target_lang}.
+REGULI CRITICE DE SEPARARE ȘI INTEGRITATE (ANTI-CONTAMINARE):
+1. REGULA ADEVĂRULUI TEHNIC: Folosește descrierea de job de mai jos DOAR pentru a prelua cuvinte-cheie tehnice și stilul de exprimare. Este STRICT INTERZIS să introduci în CV activități de "Market Research", "cercetare de piață" sau "client service non-tehnic", dacă ele nu există deja în experiența reală de Automotive Engineering a candidatului.
+2. DOMENIU STRICT: Candidatul lucrează în Automotive (Renault/Horse, ECU, SDV, SFS, Management de Proiect Tehnic, Brevete oficiale). Păstrează exclusiv acest domeniu.
+3. FĂRĂ INVENȚII: Nu inventa publicații sau conferințe. Păstrează brevetele reale (patents).
+4. STRUCTURĂ: Nu duplica titlurile în interiorul conținutului.
+5. FORMAT: Răspunde EXCLUSIV în format HTML curat (<p>, <ul>, <li>, <strong>), FĂRĂ blocuri de cod markdown.
+6. LIMBĂ: STRICT {target_lang}.
 
-CONȚINUTUL ORIGINAL AL ACESTEI SECȚIUNI:
+CONȚINUTul ORIGINAL AL ACESTEI SECȚIUNI DIN CV:
 {sec_content[:4000]}
 
-DESCRIERE JOB DE REFERINȚĂ (dacă există):
+DESCRIERE JOB DE REFERINȚĂ (Folosește DOAR pentru alinierea termenilor de management/tehnici, FĂ A PRELUA DOMENIUL DE MARKET RESEARCH):
 {job_desc[:2000]}
 """
         raw_res = gemini_text(prompt, max_tokens=2048)
@@ -285,7 +286,7 @@ DESCRIERE JOB DE REFERINȚĂ (dacă există):
 
 
 # ==========================================
-# 4. TOATE RUTELE API FLASK (Completate)
+# 4. RUTELE API FLASK
 # ==========================================
 
 @app.route("/", methods=["GET", "HEAD"])
@@ -293,7 +294,7 @@ def index():
     return jsonify({
         "status": "online",
         "success": True,
-        "service": "vCoach AI API (Map-Reduce, Postprocessing & All Endpoints)",
+        "service": "vCoach AI API (Map-Reduce, Postprocessing & Safe ATS Optimization)",
         "groq_active": USE_GROQ,
         "gemini_active": gemini_client is not None,
         "huggingface_active": USE_HF
@@ -464,8 +465,6 @@ def rephrase():
         return jsonify({"success": True, "data": payload, **payload}), 200
     except Exception as e:
         return jsonify({"success": False, "error": f"Eroare rephrase: {str(e)}"}), 500
-
-# === Rute adăugate pentru interviu / chat / sesiune completă ===
 
 @app.route("/interview-prep", methods=["POST", "OPTIONS"], endpoint="interview_prep_root")
 @app.route("/api/interview-prep", methods=["POST", "OPTIONS"], endpoint="interview_prep_api")
