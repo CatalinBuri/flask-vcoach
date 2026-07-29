@@ -55,16 +55,26 @@ MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
 
 if MISTRAL_API_KEY:
     try:
-        # Încercăm ambele variante de import pentru compatibilitate cu orice versiune mistralai
+        #Încercăm SDK-ul oficial Mistral
         try:
             from mistralai import Mistral
             mistral_client = Mistral(api_key=MISTRAL_API_KEY)
+            USE_MISTRAL = True
+            print("✅ Mistral ready (SDK)", flush=True)
         except ImportError:
-            from mistralai.client import MistralClient
-            mistral_client = MistralClient(api_key=MISTRAL_API_KEY)
-            
-        USE_MISTRAL = True
-        print("✅ Mistral ready", flush=True)
+            try:
+                from mistralai.client import MistralClient
+                mistral_client = MistralClient(api_key=MISTRAL_API_KEY)
+                USE_MISTRAL = True
+                print("✅ Mistral ready (SDK Legacy)", flush=True)
+            except ImportError:
+                # Dacă SDK-ul nu este instalat, testăm API-ul direct
+                test_response = call_mistral_api("Spune 'test'")
+                if "test" in test_response.lower():
+                    USE_MISTRAL = True
+                    print("✅ Mistral ready (Direct API)", flush=True)
+                else:
+                    print("⚠️ Mistral API key invalid sau conexiune eșuată", flush=True)
     except Exception as e:
         print(f"⚠️ Mistral nu a putut fi inițializat: {e}", flush=True)
 
