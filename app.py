@@ -5,6 +5,9 @@ import traceback
 import httpx
 from flask import Flask, request, jsonify
 from flask_cors import CORS, cross_origin
+from io import BytesIO
+from flask import send_file
+from docx import Document
 
 # Configurare aplicație Flask
 app = Flask(__name__)
@@ -530,6 +533,48 @@ def get_session():
         "has_job": bool(MEMORY.get("job_description")),
         "job_description": MEMORY.get("job_description", "")
     })
+@app.route("/export-docx", methods=["POST", "OPTIONS"], endpoint="export_docx_root")
+@app.route("/api/export-docx", methods=["POST", "OPTIONS"], endpoint="export_docx_api")
+@cross_origin()
+def export_docx():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        text_content = data.get("text") or MEMORY.get("cv_text") or ""
+
+        if not text_content:
+            return api_response(error="Textul pentru export lipsește.", code=400)
+
+        # Creare document Word nativ compatibil cu Office/OpenOffice
+        doc = Document()
+        
+        # Adăugare text linie cu linie (sau poți parsa titlurile/listele dacă este nevoie)
+        for line in text_content.split("\n"):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            # Dacă linia pare a fi un titlu (majuscule și scurtă)
+            if stripped == stripped.upper() and len(stripped) > 3 and "|" not in stripped:
+                doc.add_heading(stripped, level=2)
+            elif stripped.startswith("* ") or stripped.startswith("- "):
+                doc.add_paragraph(stripped[2:], style='List Bullet')
+            else:
+                doc.add_paragraph(stripped)
+
+        file_stream = BytesIO()
+        doc.save(file_stream)
+        file_stream.seek(0)
+
+        return send_file(
+            file_stream,
+            as_attachment=True,
+            download_name="CV_Optimizat.docx",
+            mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+    except Exception as e:
+        return api_response(error=f"Eroare generare DOCX: {str(e)}", code=500)
 
 @app.errorhandler(404)
 def not_found(e):
