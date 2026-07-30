@@ -19,6 +19,23 @@ def add_cors_headers(response):
     response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
     return response
 
+# Middleware de diagnosticare generală pentru toate cererile intratoare
+@app.before_request
+def log_incoming_requests():
+    print(f"\n--- [DIAGNOZĂ GLOBALĂ] Cerere primită ---", flush=True)
+    print(f"Metodă: {request.method} | Path: {request.path}", flush=True)
+    print(f"Antete (Headers): {dict(request.headers)}", flush=True)
+    if request.method in ["POST", "PUT"]:
+        if request.is_json:
+            json_data = request.get_json(force=True, silent=True)
+            print(f"Payload JSON primit: {json_data}", flush=True)
+        elif request.form:
+            print(f"Form data primit: {request.form.to_dict()}", flush=True)
+        elif request.files:
+            print(f"Fișiere primite: {list(request.files.keys())}", flush=True)
+        else:
+            print(f"Raw data / altele (lungime): {len(request.data)} bytes", flush=True)
+
 # Memorie temporară în RAM pentru sesiune
 MEMORY = {
     "cv_text": "",
@@ -508,7 +525,10 @@ def export_docx():
         data = request.get_json(force=True, silent=True) or {}
         text_content = data.get("text") or MEMORY.get("cv_text") or ""
 
+        print(f"--- [DIAGNOZĂ EXPORT DOCX] --- Lungime text primit pentru generare: {len(text_content)} caractere", flush=True)
+
         if not text_content:
+            print("❌ [DIAGNOZĂ EXPORT DOCX] Textul este gol sau lipsă!", flush=True)
             return api_response(error="Text lipsă pentru export.", code=400)
 
         doc = Document()
@@ -527,6 +547,8 @@ def export_docx():
         doc.save(file_stream)
         file_stream.seek(0)
 
+        print("✅ [DIAGNOZĂ EXPORT DOCX] Documentul DOCX a fost generat cu succes în memorie.", flush=True)
+
         return send_file(
             file_stream,
             as_attachment=True,
@@ -534,6 +556,8 @@ def export_docx():
             mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
     except Exception as e:
+        print(f"❌ EROARE CRITICĂ în export-docx: {type(e).__name__} - {str(e)}", flush=True)
+        traceback.print_exc()
         return api_response(error=f"Eroare generare DOCX: {str(e)}", code=500)
 
 @app.route("/get-session", methods=["GET", "OPTIONS"], endpoint="get_session_root")
