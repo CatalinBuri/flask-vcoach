@@ -13,3 +13,4 @@ pillow>=12.3.0
 pydantic
 python-multipart
 httpx
+python-docx
