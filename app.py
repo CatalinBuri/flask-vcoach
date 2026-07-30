@@ -30,6 +30,7 @@ def call_mistral_api(
     temperature: float = 0.2,
     max_tokens: int = 4096
 ) -> str:
+    """Fallback direct API call când SDK-ul nu este disponibil."""
     MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
     if not MISTRAL_API_KEY:
         return ""
@@ -60,9 +61,10 @@ def call_mistral_api(
         return ""
 
 # ==========================================
-# 2. INIȚIALIZARE CLIENȚI AI
+# 2. INIȚIALIZARE CLIENȚI AI (Gemini, Groq & Mistral)
 # ==========================================
 
+# 1. Gemini Client
 gemini_client = None
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 MODEL_NAME = "gemini-2.5-flash"
@@ -75,6 +77,7 @@ if GEMINI_API_KEY:
     except Exception as e:
         print(f"⚠️ Gemini nu a putut fi inițializat: {e}", flush=True)
 
+# 2. Groq Client
 groq_client = None
 USE_GROQ = False
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -88,6 +91,7 @@ if GROQ_API_KEY:
     except Exception as e:
         print(f"⚠️ Groq nu a putut fi inițializat: {e}", flush=True)
 
+# 3. Mistral Client
 mistral_client = None
 USE_MISTRAL = False
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
@@ -110,8 +114,11 @@ if MISTRAL_API_KEY:
                 if "test" in test_response.lower():
                     USE_MISTRAL = True
                     print("✅ Mistral ready (Direct API)", flush=True)
+                else:
+                    print("⚠️ Mistral API key invalid sau conexiune eșuată", flush=True)
     except Exception as e:
         print(f"⚠️ Mistral nu a putut fi inițializat: {e}", flush=True)
+
 
 # ==========================================
 # 3. FUNCȚII AUXILIARE & UTILS
@@ -133,14 +140,18 @@ def remove_consecutive_duplicates(text: str) -> str:
     return cleaned
 
 def enforce_factuality_and_language(target_lang: str) -> str:
+    lang_instruction = ""
     if target_lang == 'ro':
-        lang_instruction = "REGULĂ LINGVISTICĂ STRICTĂ: Tot outputul trebuie să fie exclusiv în limba ROMÂNĂ."
+        lang_instruction = "REGULĂ LINGVISTICĂ STRICTĂ: Tot outputul trebuie să fie exclusiv în limba ROMÂNĂ. Nu amesteca limbi."
     elif target_lang == 'en':
-        lang_instruction = "STRICT LANGUAGE RULE: The entire output must be exclusively in ENGLISH."
+        lang_instruction = "STRICT LANGUAGE RULE: The entire output must be exclusively in ENGLISH. Do not mix languages."
     else:
         lang_instruction = "LANGUAGE RULE: Detect and use a single unified language consistently throughout."
 
-    anti_hallucination = "REGULĂ ANTI-HALUCINAȚIE CRUCIALĂ: Este STRICT INTERZIS să inventezi date sau experiențe care nu există în textul original."
+    anti_hallucination = (
+        "REGULĂ ANTI-HALUCINAȚIE CRUCIALĂ: Este STRICT INTERZIS să inventezi date, publicații, "
+        "companii sau experiențe care nu există în textul original furnizat de utilizator."
+    )
     return f"{anti_hallucination}\n{lang_instruction}"
 
 def safe_json(raw_text: str) -> dict:
@@ -148,6 +159,7 @@ def safe_json(raw_text: str) -> dict:
         return {}
     cleaned = re.sub(r'^```(?:json)?\s*', '', raw_text.strip(), flags=re.MULTILINE)
     cleaned = re.sub(r'\s*```$', '', cleaned, flags=re.MULTILINE).strip()
+    
     try:
         return json.loads(cleaned)
     except Exception:
@@ -161,15 +173,13 @@ def safe_json(raw_text: str) -> dict:
 
 def api_response(payload=None, error=None, code=200):
     if error:
-        response = jsonify({
+        return jsonify({
             "status": "error",
             "success": False,
             "ok": False,
             "message": error,
             "error": error
-        })
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        return response, code
+        }), code
 
     base_response = {
         "status": "success",
@@ -181,16 +191,20 @@ def api_response(payload=None, error=None, code=200):
     if isinstance(payload, dict):
         base_response["data"] = payload
         base_response.update(payload)
-        response = jsonify(base_response)
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        return response, code
+        return jsonify(base_response), code
 
     base_response["data"] = payload if payload is not None else {}
-    response = jsonify(base_response)
-    response.headers.add("Access-Control-Allow-Origin", "*")
-    return response, code
+    return jsonify(base_response), code
 
 def gemini_text(prompt: str) -> str:
+    """
+    Logică de Fallback în lanț: 
+    1. Gemini
+    2. Groq
+    3. Mistral (SDK sau Direct API)
+    """
+    
+    # --- 1. Încercare cu GEMINI ---
     if gemini_client:
         try:
             response = gemini_client.models.generate_content(
@@ -200,14 +214,18 @@ def gemini_text(prompt: str) -> str:
             if response and hasattr(response, "text") and response.text:
                 return response.text.strip()
         except Exception as e:
-            print(f"⚠️ Eroare Gemini: {e}. Fallback pe Groq...", flush=True)
+            print(f"⚠️ Eroare Gemini: {type(e).__name__} - {str(e)}. Fallback pe Groq...", flush=True)
 
+    # --- 2. Încercare cu GROQ ---
     if USE_GROQ and groq_client:
         try:
             res = groq_client.with_options(max_retries=0).chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {"role": "system", "content": "Ești un asistent AI profesionist specializat în resurse umane."},
+                    {
+                        "role": "system",
+                        "content": "Ești un asistent AI profesionist specializat în resurse umane, optimizare CV-uri și interviuri."
+                    },
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
@@ -217,31 +235,45 @@ def gemini_text(prompt: str) -> str:
             if res and res.choices and res.choices[0].message.content:
                 return res.choices[0].message.content.strip()
         except Exception as e:
-            print(f"⚠️ Eroare Groq: {e}. Fallback pe Mistral...", flush=True)
+            print(f"⚠️ Eroare Groq: {type(e).__name__} - {str(e)}. Fallback pe Mistral...", flush=True)
 
+    # --- 3. Încercare cu MISTRAL ---
     if USE_MISTRAL:
         try:
-            if mistral_client and hasattr(mistral_client, "chat"):
-                res = mistral_client.chat.complete(
-                    model="mistral-small-latest",
-                    messages=[
-                        {"role": "system", "content": "Ești un asistent AI profesionist."},
-                        {"role": "user", "content": prompt}
-                    ],
-                    temperature=0.2,
-                    max_tokens=4096
-                )
-                if res and res.choices and res.choices[0].message.content:
-                    return res.choices[0].message.content.strip()
+            if mistral_client:
+                if hasattr(mistral_client, "chat"):
+                    res = mistral_client.chat.complete(
+                        model="mistral-small-latest",
+                        messages=[
+                            {"role": "system", "content": "Ești un asistent AI profesionist specializat în resurse umane."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.2,
+                        max_tokens=4096
+                    )
+                    if res and res.choices and res.choices[0].message.content:
+                        return res.choices[0].message.content.strip()
+                else:
+                    res = mistral_client.complete(
+                        model="mistral-small-latest",
+                        prompt=prompt,
+                        temperature=0.2,
+                        max_tokens=4096
+                    )
+                    if res and res.choices and res.choices[0].message.text:
+                        return res.choices[0].message.text.strip()
             
+            # Fallback la API-ul direct dacă clientul SDK nu răspunde corect
             direct_res = call_mistral_api(prompt)
             if direct_res:
                 return direct_res
+                
         except Exception as e:
-            print(f"❌ Eroare Mistral: {e}", flush=True)
+            print(f"❌ Eroare Mistral: {type(e).__name__} - {str(e)}", flush=True)
             return call_mistral_api(prompt)
 
     return ""
+
 
 # ==========================================
 # 4. RUTELE API
@@ -252,7 +284,10 @@ def index():
     return jsonify({
         "status": "online",
         "success": True,
-        "service": "vCoach AI API"
+        "service": "vCoach AI API",
+        "gemini_active": gemini_client is not None,
+        "groq_active": USE_GROQ,
+        "mistral_active": USE_MISTRAL
     }), 200
 
 @app.route("/ping", methods=["GET", "HEAD"])
@@ -272,10 +307,13 @@ def upload_cv():
             file = request.files["file"]
             filename = file.filename.lower()
             if filename.endswith(".pdf"):
-                import fitz
-                doc = fitz.open(stream=file.read(), filetype="pdf")
-                for page in doc:
-                    text_content += page.get_text()
+                try:
+                    import fitz
+                    doc = fitz.open(stream=file.read(), filetype="pdf")
+                    for page in doc:
+                        text_content += page.get_text()
+                except Exception as pdf_err:
+                    return api_response(error=f"Eroare citire PDF: {str(pdf_err)}", code=400)
             else:
                 text_content = file.read().decode("utf-8", errors="ignore")
         elif request.is_json:
@@ -284,12 +322,13 @@ def upload_cv():
 
         cleaned = clean_text(text_content)
         if not cleaned:
-            return api_response(error="Nu s-a putut extrage text.", code=400)
+            return api_response(error="Nu s-a putut extrage text din fișierul trimis.", code=400)
 
         MEMORY["cv_text"] = cleaned
-        return api_response(payload={"message": "Succes", "cv_text": cleaned})
+        return api_response(payload={"message": "CV încărcat cu succes", "length": len(cleaned), "cv_text": cleaned})
+
     except Exception as e:
-        return api_response(error=str(e), code=500)
+        return api_response(error=f"Eroare la procesare: {str(e)}", code=500)
 
 @app.route("/analyze-cv-quality", methods=["POST", "OPTIONS"], endpoint="analyze_cv_quality_root")
 @app.route("/api/cv-quality", methods=["POST", "OPTIONS"], endpoint="analyze_cv_quality_api")
@@ -300,40 +339,79 @@ def analyze_cv_quality():
 
     try:
         data = request.get_json(force=True, silent=True) or {}
-        cv = clean_text(data.get("cv_text") or MEMORY.get("cv_text") or "")
-        job = clean_text(data.get("job_description") or MEMORY.get("job_description") or "")
-        target_lang = data.get("target_language") or "ro"
+        cv_raw = data.get("cv_text") or MEMORY.get("cv_text") or ""
+        job_raw = data.get("job_description") or data.get("job_text") or MEMORY.get("job_description") or ""
+        target_lang = data.get("target_language") or data.get("language") or "ro"
+        
+        cv = clean_text(cv_raw)
+        job = clean_text(job_raw)
 
         if not cv:
             return api_response(error="CV lipsă.", code=400)
 
-        prompt = f"""
-{enforce_factuality_and_language(target_lang)}
-Analizează CV-ul în raport cu jobul. Răspunde EXCLUSIV JSON:
+        MEMORY["cv_text"] = cv
+        if job:
+            MEMORY["job_description"] = job
+
+        factuality_rules = enforce_factuality_and_language(target_lang)
+
+        if job:
+            prompt = f"""
+{factuality_rules}
+Ești un recruiter senior și expert în sisteme ATS. Analizează CV-ul în raport direct cu Descrierea Jobului.
+Răspunde EXCLUSIV cu un obiect JSON valid:
 {{
   "clarity_score": 8,
   "relevance_score": 7,
   "structure_score": 8,
-  "matched_ats_keywords": ["Cuvant"],
-  "missing_ats_keywords": ["Lipsește"],
-  "concrete_improvements": ["Sfat"],
+  "matched_ats_keywords": ["Cuvant1"],
+  "missing_ats_keywords": ["CuvantLipsește"],
+  "concrete_improvements": ["Sfat 1"],
   "suggested_rephrasings": ["Exemplu"]
 }}
-CV: {cv}
-JOB: {job}
+CV:
+{cv}
+DESCRIERE JOB:
+{job}
 """
-        parsed = safe_json(gemini_text(prompt))
-        return api_response(payload={
+        else:
+            prompt = f"""
+{factuality_rules}
+Ești un recruiter senior. Analizează structura și calitatea acestui CV.
+Răspunde EXCLUSIV cu un obiect JSON valid:
+{{
+  "clarity_score": 8,
+  "relevance_score": 6,
+  "structure_score": 8,
+  "detected_skills": ["Skill1"],
+  "missing_ats_keywords": ["Adăugați un Job Description"],
+  "concrete_improvements": ["Recomandare 1"],
+  "suggested_rephrasings": ["Exemplu"]
+}}
+CV:
+{cv}
+"""
+
+        raw_res = gemini_text(prompt)
+        parsed = safe_json(raw_res)
+
+        improvements = [remove_consecutive_duplicates(imp) for imp in (parsed.get("concrete_improvements") or [])]
+        rephrasings = [remove_consecutive_duplicates(rep) for rep in (parsed.get("suggested_rephrasings") or [])]
+
+        payload = {
             "clarity_score": parsed.get("clarity_score", 8),
-            "relevance_score": parsed.get("relevance_score", 7),
+            "relevance_score": parsed.get("relevance_score", 7 if job else 5),
             "structure_score": parsed.get("structure_score", 8),
-            "ats_keywords": parsed.get("matched_ats_keywords", []),
-            "missing_keywords": parsed.get("missing_ats_keywords", []),
-            "concrete_improvements": parsed.get("concrete_improvements", []),
-            "suggested_rephrasings": parsed.get("suggested_rephrasings", [])
-        })
+            "has_job_context": bool(job),
+            "ats_keywords": parsed.get("matched_ats_keywords") or parsed.get("detected_skills") or [],
+            "missing_keywords": parsed.get("missing_ats_keywords") or [],
+            "concrete_improvements": improvements,
+            "suggested_rephrasings": rephrasings
+        }
+
+        return api_response(payload=payload)
     except Exception as e:
-        return api_response(error=str(e), code=500)
+        return api_response(error=f"Eroare analiză CV: {str(e)}", code=500)
 
 @app.route("/interview-question", methods=["POST", "OPTIONS"], endpoint="interview_question_root")
 @app.route("/api/interview-question", methods=["POST", "OPTIONS"], endpoint="interview_question_api")
@@ -344,24 +422,37 @@ def interview_question():
 
     try:
         data = request.get_json(force=True, silent=True) or {}
+        user_answer = data.get("user_answer", "")
+        role = data.get("role", "Software Developer")
+        target_lang = data.get("target_language") or data.get("language") or "ro"
+
+        factuality_rules = enforce_factuality_and_language(target_lang)
         prompt = f"""
-{enforce_factuality_and_language(data.get("target_language", "ro"))}
-Răspunde DOAR JSON:
+{factuality_rules}
+Ești un recrutator pentru rolul: {role}. Răspuns candidat: "{user_answer}"
+Returnează DOAR un obiect JSON valid:
 {{
-  "feedback": "...",
+  "feedback": "Evaluare...",
   "score": 8,
-  "next_question": "..."
+  "next_question": "Următoarea întrebare..."
 }}
-Răspuns candidat: "{data.get("user_answer", "")}"
 """
-        parsed = safe_json(gemini_text(prompt)) or {}
-        return api_response(payload={
-            "feedback": parsed.get("feedback", ""),
+        raw_res = gemini_text(prompt)
+        parsed = safe_json(raw_res) or {}
+
+        feedback = remove_consecutive_duplicates(parsed.get("feedback", ""))
+        next_q = remove_consecutive_duplicates(parsed.get("next_question", ""))
+
+        payload = {
+            "feedback": feedback,
             "score": parsed.get("score", 7),
-            "next_question": parsed.get("next_question", "")
-        })
+            "next_question": next_q,
+            "question": next_q
+        }
+
+        return api_response(payload=payload)
     except Exception as e:
-        return api_response(error=str(e), code=500)
+        return api_response(error=f"Eroare interviu: {str(e)}", code=500)
 
 @app.route("/rephrase", methods=["POST", "OPTIONS"], endpoint="rephrase_root")
 @app.route("/api/rephrase", methods=["POST", "OPTIONS"], endpoint="rephrase_api")
@@ -373,19 +464,59 @@ def rephrase():
     try:
         data = request.get_json(force=True, silent=True) or {}
         cv_text = data.get("text") or MEMORY.get("cv_text") or ""
-        prompt = f"""
-{enforce_factuality_and_language(data.get("target_language", "ro"))}
-Rescrie CV-ul. Răspunde DOAR JSON:
+        job_desc = data.get("job_description") or MEMORY.get("job_description") or ""
+        target_lang = data.get("target_language") or data.get("language") or "ro"
+
+        if not cv_text:
+            return api_response(error="Textul CV-ului pentru reformulare lipsește.", code=400)
+
+        factuality_rules = enforce_factuality_and_language(target_lang)
+
+        if job_desc:
+            prompt = f"""
+{factuality_rules}
+Ești un expert în scriere de CV-uri și optimizare ATS. 
+Rescrie, structurează și refocalizează complet conținutul acestui CV bazându-te exclusiv pe faptele reale din CV și aliniindu-l cu Descrierea Jobului.
+
+Returnează DOAR un obiect JSON valid cu structura:
 {{
-  "improved_text": "..."
+  "improved_text": "Textul complet rescris și optimizat al CV-ului..."
 }}
-CV: {cv_text}
+
+CV ORIGINAL:
+{cv_text}
+
+DESCRIERE JOB:
+{job_desc}
 """
-        parsed = safe_json(gemini_text(prompt))
-        improved = parsed.get("improved_text", cv_text)
-        return api_response(payload={"improved_text": improved})
+        else:
+            prompt = f"""
+{factuality_rules}
+Ești un expert în scriere de CV-uri. Îmbunătățește și reformulează acest CV pe baza exclusivă a datelor reale existente.
+
+Returnează DOAR un obiect JSON valid cu structura:
+{{
+  "improved_text": "Textul optimizat..."
+}}
+
+CV ORIGINAL:
+{cv_text}
+"""
+
+        raw_res = gemini_text(prompt)
+        parsed = safe_json(raw_res)
+        improved = parsed.get("improved_text") if parsed else raw_res
+        improved = remove_consecutive_duplicates(improved)
+
+        payload = {
+            "improved_text": improved,
+            "rephrased_text": improved,
+            "text": improved
+        }
+
+        return api_response(payload=payload)
     except Exception as e:
-        return api_response(error=str(e), code=500)
+        return api_response(error=f"Eroare rephrase: {str(e)}", code=500)
 
 @app.route("/export-docx", methods=["POST", "OPTIONS"], endpoint="export_docx_root")
 @app.route("/api/export-docx", methods=["POST", "OPTIONS"], endpoint="export_docx_api")
@@ -399,7 +530,7 @@ def export_docx():
         text_content = data.get("text") or MEMORY.get("cv_text") or ""
 
         if not text_content:
-            return api_response(error="Text lipsă.", code=400)
+            return api_response(error="Text lipsă pentru export.", code=400)
 
         doc = Document()
         for line in text_content.split("\n"):
@@ -417,17 +548,38 @@ def export_docx():
         doc.save(file_stream)
         file_stream.seek(0)
 
-        response = send_file(
+        return send_file(
             file_stream,
             as_attachment=True,
             download_name="CV_Optimizat.docx",
             mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
-        response.headers.add("Access-Control-Allow-Origin", "*")
-        return response
     except Exception as e:
-        return api_response(error=str(e), code=500)
+        return api_response(error=f"Eroare generare DOCX: {str(e)}", code=500)
+
+@app.route("/get-session", methods=["GET", "OPTIONS"], endpoint="get_session_root")
+@app.route("/api/get-session", methods=["GET", "OPTIONS"], endpoint="get_session_api")
+@cross_origin()
+def get_session():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+    return api_response(payload={
+        "has_cv": bool(MEMORY.get("cv_text")),
+        "cv_length": len(MEMORY.get("cv_text", "")),
+        "cv_text": MEMORY.get("cv_text", ""),
+        "has_job": bool(MEMORY.get("job_description")),
+        "job_description": MEMORY.get("job_description", "")
+    })
+
+@app.errorhandler(404)
+def not_found(e):
+    return api_response(error="Endpoint-ul căutat nu există pe server.", code=404)
+
+@app.errorhandler(500)
+def server_error(e):
+    return api_response(error="Eroare internă pe server.", code=500)
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
+    print(f"🚀 Serverul pornește pe portul {port}...", flush=True)
     app.run(host="0.0.0.0", port=port, debug=False)
