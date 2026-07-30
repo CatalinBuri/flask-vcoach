@@ -4,14 +4,20 @@ import json
 import traceback
 import httpx
 from flask import Flask, request, jsonify, send_file
-from flask_cors import CORS, cross_origin
 from io import BytesIO
 from docx import Document
 
 # Configurare aplicație Flask
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
-CORS(app)
+
+# Configurare CORS global manuală pentru a evita duplicatele de antet
+@app.after_request
+def add_cors_headers(response):
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Headers'] = 'Content-Type,Authorization'
+    response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
+    return response
 
 # Memorie temporară în RAM pentru sesiune
 MEMORY = {
@@ -197,14 +203,6 @@ def api_response(payload=None, error=None, code=200):
     return jsonify(base_response), code
 
 def gemini_text(prompt: str) -> str:
-    """
-    Logică de Fallback în lanț: 
-    1. Gemini
-    2. Groq
-    3. Mistral (SDK sau Direct API)
-    """
-    
-    # --- 1. Încercare cu GEMINI ---
     if gemini_client:
         try:
             response = gemini_client.models.generate_content(
@@ -214,18 +212,14 @@ def gemini_text(prompt: str) -> str:
             if response and hasattr(response, "text") and response.text:
                 return response.text.strip()
         except Exception as e:
-            print(f"⚠️ Eroare Gemini: {type(e).__name__} - {str(e)}. Fallback pe Groq...", flush=True)
+            print(f"⚠️ Eroare Gemini: {type(e)} - {str(e)}", flush=True)
 
-    # --- 2. Încercare cu GROQ ---
     if USE_GROQ and groq_client:
         try:
             res = groq_client.with_options(max_retries=0).chat.completions.create(
                 model="llama-3.1-8b-instant",
                 messages=[
-                    {
-                        "role": "system",
-                        "content": "Ești un asistent AI profesionist specializat în resurse umane, optimizare CV-uri și interviuri."
-                    },
+                    {"role": "system", "content": "Ești un asistent AI specializat în resurse umane."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.2,
@@ -235,41 +229,28 @@ def gemini_text(prompt: str) -> str:
             if res and res.choices and res.choices[0].message.content:
                 return res.choices[0].message.content.strip()
         except Exception as e:
-            print(f"⚠️ Eroare Groq: {type(e).__name__} - {str(e)}. Fallback pe Mistral...", flush=True)
+            print(f"⚠️ Eroare Groq: {type(e)} - {str(e)}", flush=True)
 
-    # --- 3. Încercare cu MISTRAL ---
     if USE_MISTRAL:
         try:
-            if mistral_client:
-                if hasattr(mistral_client, "chat"):
-                    res = mistral_client.chat.complete(
-                        model="mistral-small-latest",
-                        messages=[
-                            {"role": "system", "content": "Ești un asistent AI profesionist specializat în resurse umane."},
-                            {"role": "user", "content": prompt}
-                        ],
-                        temperature=0.2,
-                        max_tokens=4096
-                    )
-                    if res and res.choices and res.choices[0].message.content:
-                        return res.choices[0].message.content.strip()
-                else:
-                    res = mistral_client.complete(
-                        model="mistral-small-latest",
-                        prompt=prompt,
-                        temperature=0.2,
-                        max_tokens=4096
-                    )
-                    if res and res.choices and res.choices[0].message.text:
-                        return res.choices[0].message.text.strip()
+            if mistral_client and hasattr(mistral_client, "chat"):
+                res = mistral_client.chat.complete(
+                    model="mistral-small-latest",
+                    messages=[
+                        {"role": "system", "content": "Ești un asistent AI specializat în resurse umane."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.2,
+                    max_tokens=4096
+                )
+                if res and res.choices and res.choices[0].message.content:
+                    return res.choices[0].message.content.strip()
             
-            # Fallback la API-ul direct dacă clientul SDK nu răspunde corect
             direct_res = call_mistral_api(prompt)
             if direct_res:
                 return direct_res
-                
         except Exception as e:
-            print(f"❌ Eroare Mistral: {type(e).__name__} - {str(e)}", flush=True)
+            print(f"❌ Eroare Mistral: {type(e)} - {str(e)}", flush=True)
             return call_mistral_api(prompt)
 
     return ""
@@ -279,8 +260,10 @@ def gemini_text(prompt: str) -> str:
 # 4. RUTELE API
 # ==========================================
 
-@app.route("/", methods=["GET", "HEAD"])
+@app.route("/", methods=["GET", "HEAD", "OPTIONS"])
 def index():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
     return jsonify({
         "status": "online",
         "success": True,
@@ -290,13 +273,14 @@ def index():
         "mistral_active": USE_MISTRAL
     }), 200
 
-@app.route("/ping", methods=["GET", "HEAD"])
+@app.route("/ping", methods=["GET", "HEAD", "OPTIONS"])
 def ping():
+    if request.method == "OPTIONS":
+        return "", 200
     return "OK", 200
 
 @app.route("/upload-cv", methods=["POST", "OPTIONS"], endpoint="upload_cv_root")
 @app.route("/api/upload-cv", methods=["POST", "OPTIONS"], endpoint="upload_cv_api")
-@cross_origin()
 def upload_cv():
     if request.method == "OPTIONS":
         return api_response(code=200)
@@ -326,13 +310,11 @@ def upload_cv():
 
         MEMORY["cv_text"] = cleaned
         return api_response(payload={"message": "CV încărcat cu succes", "length": len(cleaned), "cv_text": cleaned})
-
     except Exception as e:
         return api_response(error=f"Eroare la procesare: {str(e)}", code=500)
 
 @app.route("/analyze-cv-quality", methods=["POST", "OPTIONS"], endpoint="analyze_cv_quality_root")
 @app.route("/api/cv-quality", methods=["POST", "OPTIONS"], endpoint="analyze_cv_quality_api")
-@cross_origin()
 def analyze_cv_quality():
     if request.method == "OPTIONS":
         return api_response(code=200)
@@ -415,7 +397,6 @@ CV:
 
 @app.route("/interview-question", methods=["POST", "OPTIONS"], endpoint="interview_question_root")
 @app.route("/api/interview-question", methods=["POST", "OPTIONS"], endpoint="interview_question_api")
-@cross_origin()
 def interview_question():
     if request.method == "OPTIONS":
         return api_response(code=200)
@@ -456,7 +437,6 @@ Returnează DOAR un obiect JSON valid:
 
 @app.route("/rephrase", methods=["POST", "OPTIONS"], endpoint="rephrase_root")
 @app.route("/api/rephrase", methods=["POST", "OPTIONS"], endpoint="rephrase_api")
-@cross_origin()
 def rephrase():
     if request.method == "OPTIONS":
         return api_response(code=200)
@@ -520,7 +500,6 @@ CV ORIGINAL:
 
 @app.route("/export-docx", methods=["POST", "OPTIONS"], endpoint="export_docx_root")
 @app.route("/api/export-docx", methods=["POST", "OPTIONS"], endpoint="export_docx_api")
-@cross_origin()
 def export_docx():
     if request.method == "OPTIONS":
         return api_response(code=200)
@@ -559,7 +538,6 @@ def export_docx():
 
 @app.route("/get-session", methods=["GET", "OPTIONS"], endpoint="get_session_root")
 @app.route("/api/get-session", methods=["GET", "OPTIONS"], endpoint="get_session_api")
-@cross_origin()
 def get_session():
     if request.method == "OPTIONS":
         return api_response(code=200)
