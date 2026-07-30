@@ -174,13 +174,15 @@ def safe_json(raw_text: str) -> dict:
 
 def api_response(payload=None, error=None, code=200):
     if error:
-        return jsonify({
+        response = jsonify({
             "status": "error",
             "success": False,
             "ok": False,
             "message": error,
             "error": error
-        }), code
+        })
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        return response, code
 
     base_response = {
         "status": "success",
@@ -192,10 +194,14 @@ def api_response(payload=None, error=None, code=200):
     if isinstance(payload, dict):
         base_response["data"] = payload
         base_response.update(payload)
-        return jsonify(base_response), code
+        response = jsonify(base_response)
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        return response, code
 
     base_response["data"] = payload if payload is not None else {}
-    return jsonify(base_response), code
+    response = jsonify(base_response)
+    response.headers.add("Access-Control-Allow-Origin", "*")
+    return response, code
 
 def gemini_text(prompt: str) -> str:
     """
@@ -215,9 +221,9 @@ def gemini_text(prompt: str) -> str:
             if response and hasattr(response, "text") and response.text:
                 return response.text.strip()
         except Exception as e:
-            print(f"⚠️ Eroare Gemini: {type(e).__name__} - {str(e)}. Fallback pe Grok...", flush=True)
+            print(f"⚠️ Eroare Gemini: {type(e).__name__} - {str(e)}. Fallback pe Groq...", flush=True)
 
-    # --- 2. Încercare cu GROK ---
+    # --- 2. Încercare cu GROQ ---
     if USE_GROQ and groq_client:
         try:
             res = groq_client.with_options(max_retries=0).chat.completions.create(
@@ -236,7 +242,7 @@ def gemini_text(prompt: str) -> str:
             if res and res.choices and res.choices[0].message.content:
                 return res.choices[0].message.content.strip()
         except Exception as e:
-            print(f"⚠️ Eroare Grok: {type(e).__name__} - {str(e)}. Fallback pe Mistral...", flush=True)
+            print(f"⚠️ Eroare Groq: {type(e).__name__} - {str(e)}. Fallback pe Mistral...", flush=True)
 
     # --- 3. Încercare cu MISTRAL ---
     if USE_MISTRAL:
@@ -533,6 +539,7 @@ def get_session():
         "has_job": bool(MEMORY.get("job_description")),
         "job_description": MEMORY.get("job_description", "")
     })
+
 @app.route("/export-docx", methods=["POST", "OPTIONS"], endpoint="export_docx_root")
 @app.route("/api/export-docx", methods=["POST", "OPTIONS"], endpoint="export_docx_api")
 @cross_origin()
@@ -567,12 +574,14 @@ def export_docx():
         doc.save(file_stream)
         file_stream.seek(0)
 
-        return send_file(
+        response = send_file(
             file_stream,
             as_attachment=True,
             download_name="CV_Optimizat.docx",
             mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         )
+        response.headers.add("Access-Control-Allow-Origin", "*")
+        return response
     except Exception as e:
         return api_response(error=f"Eroare generare DOCX: {str(e)}", code=500)
 
