@@ -7,11 +7,18 @@ from flask import Flask, request, jsonify, send_file
 from io import BytesIO
 from docx import Document
 
+# ReportLab pentru PDF
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import mm
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.enums import TA_LEFT
+
 # Configurare aplicație Flask
 app = Flask(__name__)
 app.config['JSON_AS_ASCII'] = False
 
-# Configurare CORS global manuală pentru a evita duplicatele de antet
+# Configurare CORS global manuală
 @app.after_request
 def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
@@ -19,7 +26,7 @@ def add_cors_headers(response):
     response.headers['Access-Control-Allow-Methods'] = 'GET,PUT,POST,DELETE,OPTIONS'
     return response
 
-# Middleware de diagnosticare generală pentru toate cererile intratoare
+# Middleware de diagnosticare
 @app.before_request
 def log_incoming_requests():
     print(f"\n--- [DIAGNOZĂ GLOBALĂ] Cerere primită ---", flush=True)
@@ -36,7 +43,7 @@ def log_incoming_requests():
         else:
             print(f"Raw data / altele (lungime): {len(request.data)} bytes", flush=True)
 
-# Memorie temporară în RAM pentru sesiune
+# Memorie temporară în RAM
 MEMORY = {
     "cv_text": "",
     "job_description": "",
@@ -53,7 +60,6 @@ def call_mistral_api(
     temperature: float = 0.2,
     max_tokens: int = 4096
 ) -> str:
-    """Fallback direct API call când SDK-ul nu este disponibil."""
     MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
     if not MISTRAL_API_KEY:
         return ""
@@ -67,7 +73,10 @@ def call_mistral_api(
         payload = {
             "model": model,
             "messages": [
-                {"role": "system", "content": "Ești un asistent AI profesionist specializat în resurse umane, optimizare CV-uri și interviuri."},
+                {
+                    "role": "system",
+                    "content": "Ești un asistent AI profesionist specializat în resurse umane, optimizare CV-uri și interviuri."
+                },
                 {"role": "user", "content": prompt}
             ],
             "temperature": temperature,
@@ -84,10 +93,9 @@ def call_mistral_api(
         return ""
 
 # ==========================================
-# 2. INIȚIALIZARE CLIENȚI AI (Gemini, Groq & Mistral)
+# 2. INIȚIALIZARE CLIENȚI AI
 # ==========================================
 
-# 1. Gemini Client
 gemini_client = None
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 MODEL_NAME = "gemini-2.5-flash"
@@ -100,7 +108,6 @@ if GEMINI_API_KEY:
     except Exception as e:
         print(f"⚠️ Gemini nu a putut fi inițializat: {e}", flush=True)
 
-# 2. Groq Client
 groq_client = None
 USE_GROQ = False
 GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
@@ -114,7 +121,6 @@ if GROQ_API_KEY:
     except Exception as e:
         print(f"⚠️ Groq nu a putut fi inițializat: {e}", flush=True)
 
-# 3. Mistral Client
 mistral_client = None
 USE_MISTRAL = False
 MISTRAL_API_KEY = os.environ.get("MISTRAL_API_KEY")
@@ -163,7 +169,6 @@ def remove_consecutive_duplicates(text: str) -> str:
     return cleaned
 
 def enforce_factuality_and_language(target_lang: str) -> str:
-    lang_instruction = ""
     if target_lang == 'ro':
         lang_instruction = "REGULĂ LINGVISTICĂ STRICTĂ: Tot outputul trebuie să fie exclusiv în limba ROMÂNĂ. Nu amesteca limbi."
     elif target_lang == 'en':
@@ -464,16 +469,32 @@ def rephrase():
         job_desc = data.get("job_description") or MEMORY.get("job_description") or ""
         target_lang = data.get("target_language") or data.get("language") or "ro"
 
+        # Sugestii din Audit
+        recommendations = data.get("recommendations") or data.get("concrete_improvements") or []
+        missing_keywords = data.get("missing_keywords") or []
+        matching_skills = data.get("matching_skills") or data.get("ats_keywords") or []
+
         if not cv_text:
             return api_response(error="Textul CV-ului pentru reformulare lipsește.", code=400)
 
         factuality_rules = enforce_factuality_and_language(target_lang)
 
+        extra_context = ""
+        if recommendations or missing_keywords:
+            extra_context = f"""
+SUGESTII DIN ANALIZA DE COMPATIBILITATE (integrează-le natural, fără a inventa experiențe):
+- Recomandări concrete: {recommendations}
+- Cuvinte cheie / skills lipsă: {missing_keywords}
+- Skills deja potrivite: {matching_skills}
+"""
+
         if job_desc:
             prompt = f"""
 {factuality_rules}
-Ești un expert în scriere de CV-uri și optimizare ATS. 
+Ești un expert în scriere de CV-uri și optimizare ATS.
 Rescrie, structurează și refocalizează complet conținutul acestui CV bazându-te exclusiv pe faptele reale din CV și aliniindu-l cu Descrierea Jobului.
+Folosește verbe puternice de acțiune. Integrează natural cuvintele cheie lipsă DOAR dacă sunt susținute de experiența reală din CV.
+{extra_context}
 
 Returnează DOAR un obiect JSON valid cu structura:
 {{
@@ -490,6 +511,7 @@ DESCRIERE JOB:
             prompt = f"""
 {factuality_rules}
 Ești un expert în scriere de CV-uri. Îmbunătățește și reformulează acest CV pe baza exclusivă a datelor reale existente.
+{extra_context}
 
 Returnează DOAR un obiect JSON valid cu structura:
 {{
@@ -514,6 +536,47 @@ CV ORIGINAL:
         return api_response(payload=payload)
     except Exception as e:
         return api_response(error=f"Eroare rephrase: {str(e)}", code=500)
+
+@app.route("/generate-cover-letter", methods=["POST", "OPTIONS"], endpoint="cover_letter_root")
+@app.route("/api/cover-letter", methods=["POST", "OPTIONS"], endpoint="cover_letter_api")
+def generate_cover_letter():
+    if request.method == "OPTIONS":
+        return api_response(code=200)
+
+    try:
+        data = request.get_json(force=True, silent=True) or {}
+        cv = clean_text(data.get("cv_text") or MEMORY.get("cv_text") or "")
+        job_desc = clean_text(data.get("job_description") or MEMORY.get("job_description") or "")
+        target_lang = data.get("target_language") or data.get("language") or "ro"
+
+        if not cv or not job_desc:
+            return api_response(error="CV-ul și Descrierea Jobului sunt necesare pentru Cover Letter.", code=400)
+
+        factuality_rules = enforce_factuality_and_language(target_lang)
+        prompt = f"""
+{factuality_rules}
+Creează o scrisoare de intenție (Cover Letter) profesională, concisă (maximum 400 de cuvinte),
+adaptată la jobul de mai jos. Folosește DOAR informații reale din CV. Nu inventa experiențe.
+
+Structură:
+1. Introducere – de ce aplici și interesul pentru rol/companie
+2. 1-2 paragrafe cu realizări și competențe relevante din CV
+3. Încheiere – entuziasm, disponibilitate pentru interviu
+
+CV:
+{cv}
+
+JOB DESCRIPTION:
+{job_desc}
+"""
+        cover_letter_text = remove_consecutive_duplicates(gemini_text(prompt))
+        payload = {
+            "cover_letter": cover_letter_text,
+            "text": cover_letter_text
+        }
+        return api_response(payload=payload)
+    except Exception as e:
+        return api_response(error=f"Eroare cover letter: {str(e)}", code=500)
 
 @app.route("/export-docx", methods=["POST", "OPTIONS"], endpoint="export_docx_root")
 @app.route("/api/export-docx", methods=["POST", "OPTIONS"], endpoint="export_docx_api")
