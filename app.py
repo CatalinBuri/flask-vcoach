@@ -620,38 +620,111 @@ JOB DESCRIPTION:
 @app.route("/api/export-docx", methods=["POST", "OPTIONS"], endpoint="export_docx_api")
 def export_docx():
     if request.method == "OPTIONS":
-        return api_response(code=200)
+        return "", 200
 
     try:
+        from docx.shared import Pt, RGBColor
+        from docx.enum.text import WD_PARAGRAPH_ALIGNMENT
+
         data = request.get_json(force=True, silent=True) or {}
         text_content = data.get("text") or MEMORY.get("cv_text") or ""
 
-        print(
-            f"--- [DIAGNOZA EXPORT DOCX] --- Lungime text primit pentru generare: {len(text_content)} caractere",
-            flush=True,
-        )
+        print(f"--- [DIAGNOZA EXPORT DOCX] --- Lungime text: {len(text_content)} caractere", flush=True)
 
         if not text_content:
-            print("❌ [DIAGNOZA EXPORT DOCX] Textul este gol sau lipsa!", flush=True)
             return api_response(error="Text lipsa pentru export.", code=400)
 
+        def add_runs_with_bold(paragraph, text):
+            """Parseaza **bold** din text si adauga runs corespunzatoare."""
+            import re
+            parts = re.split(r'(\*\*.*?\*\*)', text)
+            for part in parts:
+                if part.startswith('**') and part.endswith('**') and len(part) > 4:
+                    run = paragraph.add_run(part[2:-2])
+                    run.bold = True
+                else:
+                    # italic _text_
+                    subparts = re.split(r'(_.*?_)', part)
+                    for sp in subparts:
+                        if sp.startswith('_') and sp.endswith('_') and len(sp) > 2:
+                            run = paragraph.add_run(sp[1:-1])
+                            run.italic = True
+                        else:
+                            paragraph.add_run(sp)
+
         doc = Document()
+
+        # Stiluri de baza
+        style = doc.styles['Normal']
+        style.font.name = 'Arial'
+        style.font.size = Pt(10)
+
         for line in text_content.split("\n"):
             stripped = line.strip()
             if not stripped:
                 continue
-            if stripped == stripped.upper() and len(stripped) > 3 and "|" not in stripped:
-                doc.add_heading(stripped, level=2)
-            elif stripped.startswith("* ") or stripped.startswith("- "):
-                doc.add_paragraph(stripped[2:], style="List Bullet")
-            else:
-                doc.add_paragraph(stripped)
+
+            # 1. Markdown headers: # ## ###
+            header_match = re.match(r'^(#{1,4})\s+(.+)$', stripped)
+            if header_match:
+                level = min(len(header_match.group(1)), 2)  # max Heading 2
+                content = header_match.group(2).replace('**', '').replace('_', '')
+                doc.add_heading(content, level=level)
+                continue
+
+            # 2. Bullet points
+            if stripped.startswith(('* ', '- ', '• ')):
+                item = re.sub(r'^[\*\-•]\s+', '', stripped)
+                p = doc.add_paragraph(style='List Bullet')
+                add_runs_with_bold(p, item)
+                continue
+
+            # 3. Sectiuni FULL CAPS (fara | si fara @)
+            is_section = (
+                stripped == stripped.upper()
+                and len(stripped) > 3
+                and '|' not in stripped
+                and '@' not in stripped
+                and not re.search(r'\d', stripped)
+            )
+            if is_section:
+                doc.add_heading(stripped.replace('**', ''), level=2)
+                continue
+
+            # 4. Job title: contine | si e majoritar uppercase / bold
+            clean_for_check = stripped.replace('**', '')
+            if '|' in clean_for_check and clean_for_check.upper() == clean_for_check:
+                p = doc.add_paragraph()
+                add_runs_with_bold(p, stripped)
+                for run in p.runs:
+                    run.bold = True
+                    run.font.size = Pt(11)
+                continue
+
+            # 5. Linii de data (italic)
+            if (
+                re.match(r'^_.*_$', stripped)
+                or re.match(r'^\d{2}/\d{2}/\d{4}', stripped)
+                or re.search(r'(–|-)\s*(Current|Present)', stripped, re.I)
+                or re.match(r'^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}', stripped, re.I)
+            ):
+                p = doc.add_paragraph()
+                clean_date = stripped.strip('_')
+                run = p.add_run(clean_date.replace('**', ''))
+                run.italic = True
+                run.font.size = Pt(9)
+                run.font.color.rgb = RGBColor(0x64, 0x74, 0x8B)
+                continue
+
+            # 6. Paragraf normal (cu support bold)
+            p = doc.add_paragraph()
+            add_runs_with_bold(p, stripped)
 
         file_stream = BytesIO()
         doc.save(file_stream)
         file_stream.seek(0)
 
-        print("✅ [DIAGNOZA EXPORT DOCX] Documentul DOCX a fost generat cu succes in memorie.", flush=True)
+        print("✅ [DIAGNOZA EXPORT DOCX] Document generat cu succes.", flush=True)
 
         return send_file(
             file_stream,
@@ -660,16 +733,15 @@ def export_docx():
             mimetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         )
     except Exception as e:
-        print(f"❌ EROARE CRITICA in export-docx: {type(e).__name__} - {str(e)}", flush=True)
+        print(f"❌ EROARE DOCX: {type(e).__name__} - {str(e)}", flush=True)
         traceback.print_exc()
         return api_response(error=f"Eroare generare DOCX: {str(e)}", code=500)
-
 
 @app.route("/export-pdf", methods=["POST", "OPTIONS"], endpoint="export_pdf_root")
 @app.route("/api/export-pdf", methods=["POST", "OPTIONS"], endpoint="export_pdf_api")
 def export_pdf():
     if request.method == "OPTIONS":
-        return api_response(code=200)
+        return "", 200
 
     try:
         data = request.get_json(force=True, silent=True) or {}
@@ -684,63 +756,141 @@ def export_pdf():
         doc = SimpleDocTemplate(
             buffer,
             pagesize=A4,
-            rightMargin=18 * mm,
-            leftMargin=18 * mm,
-            topMargin=16 * mm,
-            bottomMargin=16 * mm,
+            rightMargin=16*mm,
+            leftMargin=16*mm,
+            topMargin=14*mm,
+            bottomMargin=14*mm
         )
 
         styles = getSampleStyleSheet()
 
-        style_normal = ParagraphStyle(
-            "CustomNormal",
-            parent=styles["Normal"],
-            fontName="Helvetica",
-            fontSize=10,
-            leading=14,
+        style_name = ParagraphStyle(
+            'CVName',
+            parent=styles['Heading1'],
+            fontName='Helvetica-Bold',
+            fontSize=14,
+            leading=18,
             spaceAfter=4,
+            textColor='#0f172a',
         )
         style_heading = ParagraphStyle(
-            "CustomHeading",
-            parent=styles["Heading2"],
-            fontName="Helvetica-Bold",
+            'CVHeading',
+            parent=styles['Heading2'],
+            fontName='Helvetica-Bold',
             fontSize=11,
             leading=14,
             spaceBefore=12,
-            spaceAfter=6,
-            textColor="#0f172a",
-            borderPadding=3,
+            spaceAfter=5,
+            textColor='#0f172a',
+            borderPadding=2,
         )
-        style_bullet = ParagraphStyle(
-            "CustomBullet",
-            parent=styles["Normal"],
-            fontName="Helvetica",
+        style_job = ParagraphStyle(
+            'CVJob',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=10.5,
+            leading=13,
+            spaceBefore=8,
+            spaceAfter=1,
+            textColor='#0f172a',
+        )
+        style_date = ParagraphStyle(
+            'CVDate',
+            parent=styles['Normal'],
+            fontName='Helvetica-Oblique',
+            fontSize=9,
+            leading=11,
+            spaceAfter=4,
+            textColor='#64748b',
+        )
+        style_normal = ParagraphStyle(
+            'CVNormal',
+            parent=styles['Normal'],
+            fontName='Helvetica',
             fontSize=10,
             leading=13,
-            leftIndent=15,
+            spaceAfter=3,
+            textColor='#1e293b',
+        )
+        style_bullet = ParagraphStyle(
+            'CVBullet',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=10,
+            leading=13,
+            leftIndent=12,
             spaceAfter=2,
+            textColor='#334155',
         )
 
+        def md_to_reportlab(text):
+            """Converteste **bold** si _italic_ in tag-uri reportlab."""
+            import re
+            t = (
+                text.replace('&', '&amp;')
+                    .replace('<', '&lt;')
+                    .replace('>', '&gt;')
+            )
+            t = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', t)
+            t = re.sub(r'__(.+?)__', r'<b>\1</b>', t)
+            t = re.sub(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)', r'<i>\1</i>', t)
+            t = re.sub(r'(?<!_)_(?!_)(.+?)(?<!_)_(?!_)', r'<i>\1</i>', t)
+            return t
+
         story = []
+        first_line = True
 
         for line in text_content.split("\n"):
             stripped = line.strip()
             if not stripped:
-                story.append(Spacer(1, 4))
+                story.append(Spacer(1, 3))
                 continue
 
-            safe = (
-                stripped.replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-            )
+            # Markdown headers
+            header_match = re.match(r'^(#{1,4})\s+(.+)$', stripped)
+            if header_match:
+                level = len(header_match.group(1))
+                content = md_to_reportlab(header_match.group(2))
+                if level <= 2 and first_line:
+                    story.append(Paragraph(content, style_name))
+                    first_line = False
+                else:
+                    story.append(Paragraph(content, style_heading))
+                continue
 
-            if stripped == stripped.upper() and len(stripped) > 3 and "|" not in stripped:
-                story.append(Paragraph(safe, style_heading))
-            elif stripped.startswith("* ") or stripped.startswith("- "):
-                story.append(Paragraph("• " + safe[2:], style_bullet))
-            else:
-                story.append(Paragraph(safe, style_normal))
+            # Bullets
+            if stripped.startswith(('* ', '- ', '• ')):
+                item = re.sub(r'^[\*\-•]\s+', '', stripped)
+                story.append(Paragraph('• ' + md_to_reportlab(item), style_bullet))
+                continue
+
+            # Sectiuni FULL CAPS
+            clean = stripped.replace('**', '')
+            if (clean == clean.upper() and len(clean) > 3
+                    and '|' not in clean and '@' not in clean
+                    and not re.search(r'\d', clean)):
+                story.append(Paragraph(md_to_reportlab(clean), style_heading))
+                continue
+
+            # Job title (contine | + majoritar uppercase)
+            if '|' in clean and clean.upper() == clean:
+                story.append(Paragraph(md_to_reportlab(stripped), style_job))
+                continue
+
+            # Date
+            if (re.match(r'^_.*_$', stripped)
+                    or re.match(r'^\d{2}/\d{2}/\d{4}', stripped)
+                    or re.search(r'(–|-)\s*(Current|Present)', stripped, re.I)
+                    or re.match(
+                        r'^(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}',
+                        stripped, re.I)):
+                clean_date = stripped.strip('_')
+                story.append(Paragraph(md_to_reportlab(clean_date), style_date))
+                continue
+
+            # Paragraf normal
+            story.append(Paragraph(md_to_reportlab(stripped), style_normal))
+            first_line = False
 
         doc.build(story)
         buffer.seek(0)
@@ -758,7 +908,6 @@ def export_pdf():
         print(f"❌ EROARE PDF: {type(e).__name__} - {str(e)}", flush=True)
         traceback.print_exc()
         return api_response(error=f"Eroare generare PDF: {str(e)}", code=500)
-
 
 @app.route("/get-session", methods=["GET", "OPTIONS"], endpoint="get_session_root")
 @app.route("/api/get-session", methods=["GET", "OPTIONS"], endpoint="get_session_api")
