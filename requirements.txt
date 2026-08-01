@@ -3,6 +3,7 @@ flask-cors==4.0.1
 flask-compress==1.15
 gunicorn==22.0.0
 python-dotenv==1.0.1
+reportlab
 google-genai>=2.14.0
 groq>=1.6.0
 huggingface_hub
@@ -14,4 +15,3 @@ pydantic
 python-multipart
 httpx
 python-docx
-reportlab
