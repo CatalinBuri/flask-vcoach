@@ -578,7 +578,10 @@ def generate_cover_letter():
         return api_response(code=200)
 
     try:
+        # 1. Mai întâi citim datele din request
         data = request.get_json(force=True, silent=True) or {}
+        
+        # 2. Apoi extragem câmpurile
         company_name = (data.get("company_name") or "").strip()
         job_title = (data.get("job_title") or "").strip()
 
@@ -594,22 +597,22 @@ def generate_cover_letter():
 
         if not cv or not job_desc:
             return api_response(
-                error="CV-ul si Descrierea Jobului sunt necesare pentru Cover Letter.",
+                error="CV-ul și Descrierea Jobului sunt necesare pentru Cover Letter.",
                 code=400,
             )
 
         factuality_rules = enforce_factuality_and_language(target_lang)
         prompt = f"""
 {factuality_rules}
-Creeaza o scrisoare de intentie (Cover Letter) profesionala, concisa (maximum 400 de cuvinte),
+Creează o scrisoare de intenție (Cover Letter) profesională, concisă (maximum 400 de cuvinte),
 pentru rolul "{job_title}" la compania "{company_name}".
 
-Foloseste DOAR informatii reale din CV. Nu inventa experiente.
+Folosește DOAR informații reale din CV. Nu inventa experiențe.
 
-Structura:
+Structură:
 1. Introducere – interes pentru rolul {job_title} la {company_name}
-2. 1-2 paragrafe cu realizari relevante din CV
-3. Incheiere – entuziasm, disponibilitate pentru interviu
+2. 1-2 paragrafe cu realizări relevante din CV
+3. Încheiere – entuziasm, disponibilitate pentru interviu
 
 CV:
 {cv}
