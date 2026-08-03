@@ -574,19 +574,20 @@ CV ORIGINAL:
 @app.route("/generate-cover-letter", methods=["POST", "OPTIONS"], endpoint="cover_letter_root")
 @app.route("/api/cover-letter", methods=["POST", "OPTIONS"], endpoint="cover_letter_api")
 def generate_cover_letter():
-    company_name = (data.get("company_name") or "").strip()
-job_title = (data.get("job_title") or "").strip()
-
-if not company_name or not job_title:
-    return api_response(
-        error="Numele companiei și titlul jobului sunt obligatorii pentru Cover Letter.",
-        code=400
-    )
     if request.method == "OPTIONS":
         return api_response(code=200)
 
     try:
         data = request.get_json(force=True, silent=True) or {}
+        company_name = (data.get("company_name") or "").strip()
+        job_title = (data.get("job_title") or "").strip()
+
+        if not company_name or not job_title:
+            return api_response(
+                error="Numele companiei și titlul jobului sunt obligatorii pentru Cover Letter.",
+                code=400,
+            )
+
         cv = clean_text(data.get("cv_text") or MEMORY.get("cv_text") or "")
         job_desc = clean_text(data.get("job_description") or MEMORY.get("job_description") or "")
         target_lang = data.get("target_language") or data.get("language") or "ro"
@@ -598,7 +599,7 @@ if not company_name or not job_title:
             )
 
         factuality_rules = enforce_factuality_and_language(target_lang)
-prompt = f"""
+        prompt = f"""
 {factuality_rules}
 Creeaza o scrisoare de intentie (Cover Letter) profesionala, concisa (maximum 400 de cuvinte),
 pentru rolul "{job_title}" la compania "{company_name}".
@@ -653,7 +654,6 @@ def export_docx():
                     run = paragraph.add_run(part[2:-2])
                     run.bold = True
                 else:
-                    # italic _text_
                     subparts = re.split(r'(_.*?_)', part)
                     for sp in subparts:
                         if sp.startswith('_') and sp.endswith('_') and len(sp) > 2:
@@ -664,7 +664,6 @@ def export_docx():
 
         doc = Document()
 
-        # Stiluri de baza
         style = doc.styles['Normal']
         style.font.name = 'Arial'
         style.font.size = Pt(10)
@@ -674,22 +673,19 @@ def export_docx():
             if not stripped:
                 continue
 
-            # 1. Markdown headers: # ## ###
             header_match = re.match(r'^(#{1,4})\s+(.+)$', stripped)
             if header_match:
-                level = min(len(header_match.group(1)), 2)  # max Heading 2
+                level = min(len(header_match.group(1)), 2)
                 content = header_match.group(2).replace('**', '').replace('_', '')
                 doc.add_heading(content, level=level)
                 continue
 
-            # 2. Bullet points
             if stripped.startswith(('* ', '- ', '• ')):
                 item = re.sub(r'^[\*\-•]\s+', '', stripped)
                 p = doc.add_paragraph(style='List Bullet')
                 add_runs_with_bold(p, item)
                 continue
 
-            # 3. Sectiuni FULL CAPS (fara | si fara @)
             is_section = (
                 stripped == stripped.upper()
                 and len(stripped) > 3
@@ -701,7 +697,6 @@ def export_docx():
                 doc.add_heading(stripped.replace('**', ''), level=2)
                 continue
 
-            # 4. Job title: contine | si e majoritar uppercase / bold
             clean_for_check = stripped.replace('**', '')
             if '|' in clean_for_check and clean_for_check.upper() == clean_for_check:
                 p = doc.add_paragraph()
@@ -711,7 +706,6 @@ def export_docx():
                     run.font.size = Pt(11)
                 continue
 
-            # 5. Linii de data (italic)
             if (
                 re.match(r'^_.*_$', stripped)
                 or re.match(r'^\d{2}/\d{2}/\d{4}', stripped)
@@ -726,7 +720,6 @@ def export_docx():
                 run.font.color.rgb = RGBColor(0x64, 0x74, 0x8B)
                 continue
 
-            # 6. Paragraf normal (cu support bold)
             p = doc.add_paragraph()
             add_runs_with_bold(p, stripped)
 
@@ -746,6 +739,7 @@ def export_docx():
         print(f"❌ EROARE DOCX: {type(e).__name__} - {str(e)}", flush=True)
         traceback.print_exc()
         return api_response(error=f"Eroare generare DOCX: {str(e)}", code=500)
+
 
 @app.route("/export-pdf", methods=["POST", "OPTIONS"], endpoint="export_pdf_root")
 @app.route("/api/export-pdf", methods=["POST", "OPTIONS"], endpoint="export_pdf_api")
@@ -835,7 +829,6 @@ def export_pdf():
 
         def md_to_reportlab(text):
             """Converteste **bold** si _italic_ in tag-uri reportlab."""
-            import re
             t = (
                 text.replace('&', '&amp;')
                     .replace('<', '&lt;')
@@ -856,7 +849,6 @@ def export_pdf():
                 story.append(Spacer(1, 3))
                 continue
 
-            # Markdown headers
             header_match = re.match(r'^(#{1,4})\s+(.+)$', stripped)
             if header_match:
                 level = len(header_match.group(1))
@@ -868,13 +860,11 @@ def export_pdf():
                     story.append(Paragraph(content, style_heading))
                 continue
 
-            # Bullets
             if stripped.startswith(('* ', '- ', '• ')):
                 item = re.sub(r'^[\*\-•]\s+', '', stripped)
                 story.append(Paragraph('• ' + md_to_reportlab(item), style_bullet))
                 continue
 
-            # Sectiuni FULL CAPS
             clean = stripped.replace('**', '')
             if (clean == clean.upper() and len(clean) > 3
                     and '|' not in clean and '@' not in clean
@@ -882,12 +872,10 @@ def export_pdf():
                 story.append(Paragraph(md_to_reportlab(clean), style_heading))
                 continue
 
-            # Job title (contine | + majoritar uppercase)
             if '|' in clean and clean.upper() == clean:
                 story.append(Paragraph(md_to_reportlab(stripped), style_job))
                 continue
 
-            # Date
             if (re.match(r'^_.*_$', stripped)
                     or re.match(r'^\d{2}/\d{2}/\d{4}', stripped)
                     or re.search(r'(–|-)\s*(Current|Present)', stripped, re.I)
@@ -898,7 +886,6 @@ def export_pdf():
                 story.append(Paragraph(md_to_reportlab(clean_date), style_date))
                 continue
 
-            # Paragraf normal
             story.append(Paragraph(md_to_reportlab(stripped), style_normal))
             first_line = False
 
@@ -919,6 +906,7 @@ def export_pdf():
         traceback.print_exc()
         return api_response(error=f"Eroare generare PDF: {str(e)}", code=500)
 
+
 @app.route("/get-session", methods=["GET", "OPTIONS"], endpoint="get_session_root")
 @app.route("/api/get-session", methods=["GET", "OPTIONS"], endpoint="get_session_api")
 def get_session():
@@ -927,36 +915,11 @@ def get_session():
     return api_response(
         payload={
             "has_cv": bool(MEMORY.get("cv_text")),
-            "cv_length": len(MEMORY.get("cv_text", "")),
-            "cv_text": MEMORY.get("cv_text", ""),
             "has_job": bool(MEMORY.get("job_description")),
-            "job_description": MEMORY.get("job_description", ""),
+            "cv_length": len(MEMORY.get("cv_text", "")),
         }
     )
 
 
-@app.route("/clear-session", methods=["POST", "OPTIONS"], endpoint="clear_session_root")
-@app.route("/api/clear-session", methods=["POST", "OPTIONS"], endpoint="clear_session_api")
-def clear_session():
-    if request.method == "OPTIONS":
-        return api_response(code=200)
-    MEMORY["cv_text"] = ""
-    MEMORY["job_description"] = ""
-    MEMORY["interview_history"] = []
-    return api_response(payload={"message": "Sesiunea a fost resetata cu succes."})
-
-
-@app.errorhandler(404)
-def not_found(e):
-    return api_response(error="Endpoint-ul cautat nu exista pe server.", code=404)
-
-
-@app.errorhandler(500)
-def server_error(e):
-    return api_response(error="Eroare interna pe server.", code=500)
-
-
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
-    print(f"🚀 Serverul porneste pe portul {port}...", flush=True)
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
