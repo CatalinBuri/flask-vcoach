@@ -574,6 +574,14 @@ CV ORIGINAL:
 @app.route("/generate-cover-letter", methods=["POST", "OPTIONS"], endpoint="cover_letter_root")
 @app.route("/api/cover-letter", methods=["POST", "OPTIONS"], endpoint="cover_letter_api")
 def generate_cover_letter():
+    company_name = (data.get("company_name") or "").strip()
+job_title = (data.get("job_title") or "").strip()
+
+if not company_name or not job_title:
+    return api_response(
+        error="Numele companiei și titlul jobului sunt obligatorii pentru Cover Letter.",
+        code=400
+    )
     if request.method == "OPTIONS":
         return api_response(code=200)
 
@@ -590,14 +598,16 @@ def generate_cover_letter():
             )
 
         factuality_rules = enforce_factuality_and_language(target_lang)
-        prompt = f"""
+prompt = f"""
 {factuality_rules}
 Creeaza o scrisoare de intentie (Cover Letter) profesionala, concisa (maximum 400 de cuvinte),
-adaptata la jobul de mai jos. Foloseste DOAR informatii reale din CV. Nu inventa experiente.
+pentru rolul "{job_title}" la compania "{company_name}".
+
+Foloseste DOAR informatii reale din CV. Nu inventa experiente.
 
 Structura:
-1. Introducere – de ce aplici si interesul pentru rol/companie
-2. 1-2 paragrafe cu realizari si competente relevante din CV
+1. Introducere – interes pentru rolul {job_title} la {company_name}
+2. 1-2 paragrafe cu realizari relevante din CV
 3. Incheiere – entuziasm, disponibilitate pentru interviu
 
 CV:
